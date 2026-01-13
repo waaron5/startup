@@ -10,7 +10,7 @@ We all need a break soemtimes. Group games are the easiest way to escape reality
 
 ### Design
 
-![Mock](images/game-view-mock.png)
+<img src="images/game-view-mock.png" width="300" alt="Mock">
 
 Here is a sequence diagram that shows how a group would interact with the app during a game.
 
