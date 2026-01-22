@@ -108,27 +108,27 @@ I am going to use the required technologies in the following ways:
 
 For this deliverable I built out the structure of my application using HTML.
 
-- [x] **HTML pages** - Two HTML page that represent the ability to login and vote.
-- [x] **Links** - The login page automatically links to the voter page. The voter page contains links for every voting choice.
-- [x] **Text** - Each of the voting choices is represented by a textual description.
-- [ ] **Images** - I couldn't figure out how to include an image and so I didn't do this. 😔
-- [x] **DB/Login** - Input box and submit button for login. The voting choices represent data pulled from the database.
-- [x] **WebSocket** - The count of voting results represent the tally of realtime votes.
+- [x] **HTML pages** - Two HTML pages that represent the ability to login and vote.
+- [x] **Links** - The login page automatically links to the game page where users can create a new room or join a room.
+- [x] **Text** - Each of the voting choices (locations) is represented by a textual description.
+- [ ] **Images** - Using images for in-game locatons.
+- [x] **DB/Login** - Input box and submit button for login. 
+- [x] **WebSocket** - The count of voting results represent the tally of realtime votes on locations.
 
 ## CSS deliverable
 
 For this deliverable I properly styled the application into its final appearance.
 
 - [x] **Header, footer, and main content body**
-- [x] **Navigation elements** - I dropped the underlines and changed the color for anchor elements.
-- [x] **Responsive to window resizing** - My app looks great on all window sizes and devices
+- [x] **Navigation elements** - Added game-like styling.
+- [x] **Responsive to window resizing** - My app looks great on all devices
 - [x] **Application elements** - Used good contrast and whitespace
 - [x] **Application text content** - Consistent fonts
-- [ ] **Application images** - Still don't have images and so no styling here. 😔
+- [ ] **Application images** - Used perfect location images that look good together on the game view page.
 
 ## React Phase 1: Routing deliverable
 
-For this deliverable I used JavaScript and React so that the application completely works for a single user. I also added placeholders for future technology.
+For this deliverable I used JavaScript and React so that the application works only when the party size is 4-6 (game requires this many people).
 
 - [x] **Bundled using Vite** - So amazing what Vite does. Bundling, transpiling, minifying, and HMR.
 - [x] **Components** - I have three components: The app, the ballot items, and a bouncy ball.
@@ -156,7 +156,7 @@ For this deliverable I added backend endpoints that receives votes and returns t
 
 - [x] **Node.js/Express HTTP service** - done!
 - [x] **Static middleware for frontend** - done!
-- [ ] **Calls to third party endpoints** - I didn't have time to implement this. 😔
+- [ ] **Calls to third party endpoints** - Not yet.
 - [x] **Backend service endpoints** - Placeholders for login that stores the current user on the server. Endpoints for voting.
 - [x] **Frontend calls service endpoints** - I did this using the fetch function.
 - [ ] **Supports registration, login, logout, and restricted endpoint** - Login only exists on the frontend.
@@ -166,7 +166,7 @@ For this deliverable I added backend endpoints that receives votes and returns t
 For this deliverable I associate the votes with the logged in user. I stored the votes in the database.
 
 - [x] **Stores data in MongoDB** - done!
-- [x] **Use MongoDB to store credentials** - Stores both user and their votes.
+- [x] **Use MongoDB to store credentials** - Stores users, votes, and profile info.
 
 ## WebSocket deliverable
 
