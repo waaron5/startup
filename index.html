@@ -16,34 +16,23 @@
 
     <main>
         <form>
-            <label>
-                Username
-                <input type="text" name="username" />
-            </label>
-            <label>
-                Password
-                <input type="passwrod" name="password" />
-            </label>
-            <button type="submit">Log in</button>
-            <a href="#" id="open-signup">Create an account</a>
-        </form>
 
-        <div id="signup modal" class="modal" aria-hidden="true">
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="signup-title">
-                <form id="signup-form">
-                    <label>
-                        Email
-                        <input type="email" name="email" />
-                    </label>
-                    <label>
-                        Password
-                        <input type="password" name="password" />
-                    </label>
-                    <button type="submit">Create account</button>
-                    <button type="button" id="close-signup">Cancel</button>
-                </form>
+            <label>
+                NAME
+                <input type="text" name="name" required />
+            </label>
+
+            <div class="join-room"></div>
+            <label>
+                ROOM CODE
+                <input type="text" name="roomCode" />
+            </label>
+            <button type="submit" name="action" value="join">JOIN ROOM</button>
             </div>
-        </div>
+
+            <button type="submit" name="action" value="create">CREATE ROOM</button>
+
+        </form>
     </main>
 
 </body>
