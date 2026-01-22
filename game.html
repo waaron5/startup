@@ -4,10 +4,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>The QuiSling - Game</title>
 </head>
 
 <body>
+
+    <nav>
+        <a href="#how-to-play">How to play</a>
+        <span>ABCD</span> <!--Room Code-->
+        <button type="button">Leave</button>
+    </nav>
+
+    <dialog id="how-to-play">
+        <form method="dialog">
+            <button aria-label="Close">x</button>
+        </form>
+        <h2>How to play</h2>
+        <p>*instructions*</p>
+    </dialog>
+
+    <header id="game-header">
+        <div id="timer">
+            <div id="time-bar"></div>
+        </div>
+    </header>
+
+    <main id="game-main">
+        <section id="map">
+            <div id="map-placeholder">
+                Town Map
+            </div>
+        </section>
+    </main>
+
+    <footer id="game-footer">
+        <div class="player">
+            <span id="player-name">name</span>
+            <span id="player-role">role</span>
+        </div>
+
+        <div class="status" aria-live="polite" id="phase-hint">
+            current phase/action the game
+        </div>
+    </footer>
 
 </body>
 
