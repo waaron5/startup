@@ -108,12 +108,12 @@ I am going to use the required technologies in the following ways:
 
 For this deliverable I built out the structure of my application using HTML.
 
-- [x] **HTML pages** - Two HTML pages that represent the ability to login and vote.
+- [x] **HTML pages** - Four HTML pages representing the home page, the game page, the profile/login page, and the results page.
 - [x] **Links** - The login page automatically links to the game page where users can create a new room or join a room.
 - [x] **Text** - Each of the voting choices (locations) is represented by a textual description.
 - [ ] **Images** - Using images for in-game locatons.
 - [x] **DB/Login** - Input box and submit button for login. 
-- [x] **WebSocket** - The count of voting results represent the tally of realtime votes on locations.
+- [x] **WebSocket** - The count of voting results represent the tally of realtime votes on locations, additional, the stage of the gae updates each round.
 
 ## CSS deliverable
 
