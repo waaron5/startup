@@ -17,11 +17,11 @@
   </head>
 
   <body>
-    <header class="flex flex-col justify-center items-center">
+    <header class="flex flex-col justify-center items-center mt-12">
       <h1 class="font-metal text-black text-6xl">The QuiSling</h1>
       <!-- <p>Trust No One.</p> -->
 
-      <ul>
+      <ul class="flex flex-row space-x-4 margin-top-1 p-2 m-1">
         <li><a href="#">home</a></li>
         <li><a href="game.html">game</a></li>
         <li><a href="profile.html">profile</a></li>
@@ -30,22 +30,22 @@
     </header>
 
     <main>
-      <form>
-        <label>
+      <form class="flex flex-col mt-12 items-center">
+        <label class="text-2xl text-black">
           NAME
           <input type="text" name="name" placeholder="Your name" required />
         </label>
 
         <div class="join-room"></div>
-        <label>
+        <label class="text-2xl text-black">
           ROOM CODE
           <input type="text" name="roomCode" placeholder="'ABCD'" />
         </label>
-        <button type="submit" formaction="game.html" formmethod="get">
+        <button class="bg-red-500 hover:bg-red-700 text-white" type="submit" formaction="game.html" formmethod="get">
           JOIN
         </button>
 
-        <button type="submit" formaction="game.html" formmethod="get">
+        <button class="bg-white text-black hover:bg-red-700 hover:text-white " type="submit" formaction="game.html" formmethod="get">
           CREATE ROOM
         </button>
       </form>
