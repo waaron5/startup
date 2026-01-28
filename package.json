@@ -1,0 +1,28 @@
+{
+  "name": "the-quisling",
+  "version": "1.0.0",
+  "description": "This application is a group heist game. Players can sign up, start or join rooms, and save or reference their profile info.",
+  "main": "index.js",
+  "scripts": {
+    "build:css": "tailwind -i ./src/input.css -o ./dist/output.css",
+    "watch:css": "tailwind -i ./src/input.css -o ./dist/output.css --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waaron5/startup.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/waaron5/startup/issues"
+  },
+  "homepage": "https://github.com/waaron5/startup#readme",
+  "devDependencies": {
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19"
+  }
+}
