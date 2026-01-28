@@ -1,58 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="dist/output.css">
+    <link rel="stylesheet" href="dist/output.css" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Metal+Mania&display=swap"
+      rel="stylesheet"
+    />
+
     <title>The QuiSling - Login</title>
-</head>
+  </head>
 
-<body>
+  <body>
+    <header class="flex flex-col justify-center items-center">
+      <h1 class="font-metal text-black text-6xl">The QuiSling</h1>
+      <!-- <p>Trust No One.</p> -->
 
-    <header>
-        <h1>The QuiSling</h1>
-        <!-- <p>Trust No One.</p> -->
-
-        <ul>
-            <li><a href="#">home</a></li>
-            <li><a href="game.html">game</a></li>
-            <li><a href="profile.html">profile</a></li>
-            <li><a href="results.html">results</a></li>
-        </ul>
-
-        <div class="bg-blue-500 text-white">
-            tailwind
-        </div>
+      <ul>
+        <li><a href="#">home</a></li>
+        <li><a href="game.html">game</a></li>
+        <li><a href="profile.html">profile</a></li>
+        <li><a href="results.html">results</a></li>
+      </ul>
     </header>
 
     <main>
-        <form>
+      <form>
+        <label>
+          NAME
+          <input type="text" name="name" placeholder="Your name" required />
+        </label>
 
-            <label>
-                NAME
-                <input type="text" name="name" placeholder="Your name" required />
-            </label>
+        <div class="join-room"></div>
+        <label>
+          ROOM CODE
+          <input type="text" name="roomCode" placeholder="'ABCD'" />
+        </label>
+        <button type="submit" formaction="game.html" formmethod="get">
+          JOIN
+        </button>
 
-            <div class="join-room"></div>
-            <label>
-                ROOM CODE
-                <input type="text" name="roomCode" placeholder="'ABCD'" />
-            </label>
-            <button type="submit" formaction="game.html" formmethod="get">JOIN</button>
-            </div>
-
-            <button type="submit" formaction="game.html" formmethod="get">CREATE ROOM</button>
-
-        </form>
+        <button type="submit" formaction="game.html" formmethod="get">
+          CREATE ROOM
+        </button>
+      </form>
     </main>
 
     <footer>
-        <!--Required footer-->
-        <div>Aaron Wood</div>
-        <a href="https://github.com/waaron5/startup.git">GitHub</a>
+      <!--Required footer-->
+      <div>Aaron Wood</div>
+      <a href="https://github.com/waaron5/startup.git">GitHub</a>
     </footer>
-
-</body>
-
+  </body>
 </html>

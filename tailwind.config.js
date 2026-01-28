@@ -2,7 +2,13 @@
 module.exports = {
   content: ["./*.html"],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        metal: ['"Metal Mania"', 'system-ui'],
+      },
+    },
   },
   plugins: [],
 }
+
+
