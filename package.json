@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build:css": "tailwind -i ./src/input.css -o ./dist/output.css",
+    "dev": "concurrently \"npm run watch:css\" \"live-server --port=5173\"",
     "watch:css": "tailwind -i ./src/input.css -o ./dist/output.css --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -22,6 +23,8 @@
   "homepage": "https://github.com/waaron5/startup#readme",
   "devDependencies": {
     "autoprefixer": "^10.4.23",
+    "concurrently": "^9.2.0",
+    "live-server": "^1.2.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19"
   }
