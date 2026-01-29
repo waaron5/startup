@@ -1,18 +1,48 @@
 @tailwind base;
 @tailwind components;
+@tailwind utilities;
 
+/* COLOR PALETTE */
+@layer base {
+  :root {
+    --bg: #0B0614;
+    --panel: #141026;
+    --surface: #1E1938;
 
-.btn-1,
-.btn-2 {
-  @apply transition-colors duration-500 hover:bg-red-700 p-2 rounded-sm
+    --text: #EDE9FE;
+    --text-muted: #A1A1C7;
+
+    --primary: #7C3AED;
+    --primary-hover: #8B5CF6;
+
+    --danger: #B11226;
+    --danger-hover: #DC2626;
+
+    --success: #F5C46B;
+  }
 }
 
-.btn-1 {
-    @apply bg-red-500 text-white;
+/* UI classes */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           font-medium transition-colors duration-200
+           focus:outline-none focus:ring-2 focus:ring-primary;
   }
 
-.btn-2 {
-  @apply bg-white
-}
+  .btn-primary {
+    @apply btn bg-primary text-text hover:bg-primary-hover;
+  }
 
-@tailwind utilities;
+  .btn-danger {
+    @apply btn bg-danger text-text hover:bg-danger-hover;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-text hover:bg-surface;
+  }
+
+  .card {
+    @apply rounded-xl bg-panel border border-white/10 p-4;
+  }
+}
