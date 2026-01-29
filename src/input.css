@@ -1,3 +1,18 @@
 @tailwind base;
 @tailwind components;
+
+
+.btn-1,
+.btn-2 {
+  @apply transition-colors duration-500 hover:bg-red-700 p-2 rounded-sm
+}
+
+.btn-1 {
+    @apply bg-red-500 text-white;
+  }
+
+.btn-2 {
+  @apply bg-white
+}
+
 @tailwind utilities;
