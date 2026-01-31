@@ -4,15 +4,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="dist/output.css" />
     <title>The QuiSling - Game</title>
 </head>
 
-<body>
+<body class="bg-bg text-text min-h-screen flex flex-col items-center">
 
-    <nav>
-        <a href="#how-to-play">How to play</a>
-        <span>ABCD</span> <!--Room Code-->
-        <a href="index.html" id="leave-link">Leave</a>
+    <nav class="flex flex-row items-center justify-center gap-6 text-text-muted mt-6">
+
+        <!-- Required header-->
+        <ul class="flex flex-row space-x-4 margin-top-1 p-2 m-1 text-text-muted">
+            <li><a class="hover:text-text" href="index.html">home</a></li>
+            <li><a class="hover:text-text" href="game.html">game</a></li>
+            <li><a class="hover:text-text" href="profile.html">profile</a></li>
+            <li><a class="hover:text-text" href="results.html">results</a></li>
+        </ul>
+
+        <a class="hover:text-text" href="#how-to-play">How to play</a>
+        <span class="text-text">Room code: ABCD</span> <!--Room Code-->
+        <a class="hover:text-text" href="index.html" id="leave-link">Leave</a>
     </nav>
 
     <dialog id="how-to-play">
@@ -23,44 +33,33 @@
         <p>*instructions*</p>
     </dialog>
 
-    <header id="game-header">
+    <header id="game-header" class="flex flex-col justify-center items-center mt-8 mb-8 text-center">
         <div id="timer">
             <div id="time-bar"></div>
         </div>
-
-        <!-- Required header-->
-        <h1>The QuiSling</h1>
-        <!-- <p>Trust No One.</p> -->
-
-        <ul>
-            <li><a href="index.html">home</a></li>
-            <li><a href="game.html">game</a></li>
-            <li><a href="profile.html">profile</a></li>
-            <li><a href="results.html">results</a></li>
-        </ul>
     </header>
 
-    <main id="game-main">
+    <main id="game-main" class="flex-1 flex items-center justify-center">
         <section id="map" class="map-section">
-            <div class="map-container">
-                <img src="images/town-map.png" alt="town map" class="map-image" width="200">
+            <div class="flex items-center justify-center">
+                <img src="images/town-map.png" alt="town map" class="map-image" width="700">
             </div>
         </section>
     </main>
 
-    <footer id="game-footer">
-        <div class="player">
+    <footer id="game-footer" class="mt-auto text-text-muted flex flex-col items-center gap-2 pb-4">
+        <div class="player flex items-center gap-3">
             <span id="player-name">name</span>
             <span id="player-role">role</span>
         </div>
 
-        <div class="status" aria-live="polite" id="phase-hint">
+        <div class="status text-center" aria-live="polite" id="phase-hint">
             current phase/action the game (real-time comms)
         </div>
 
         <!--Required footer-->
         <div>Aaron Wood</div>
-        <a href="https://github.com/waaron5/startup.git">GitHub</a>
+        <a class="hover:text-text" href="https://github.com/waaron5/startup.git">GitHub</a>
     </footer>
 
 </body>
