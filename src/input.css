@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Metal+Mania&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=SN+Pro:ital,wght@0,200..900;1,200..900&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -22,6 +23,11 @@
 
     --success: #F2C97D;
   }
+
+  /* Global styling */
+  body {
+    @apply font-sanspro;
+  }
 }
 
 /* UI classes */
@@ -41,10 +47,14 @@
   }
 
   .btn-ghost {
-    @apply btn bg-transparent text-text-muted hover:bg-surface;
+    @apply btn bg-transparent text-text hover:bg-primary-hover;
   }
 
   .card {
     @apply rounded-xl bg-panel border border-white/10 p-4;
+  }
+
+  .input-field {
+    @apply bg-surface text-text placeholder:text-text-muted border border-white/10 rounded-md px-3 py-2;
   }
 }

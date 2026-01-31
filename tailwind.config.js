@@ -5,6 +5,7 @@ module.exports = {
     extend: {
       fontFamily: {
         metal: ['"Metal Mania"', "system-ui"],
+        sanspro: ['"SN Pro"', "system-ui"],
       },
 
       // Map colors CSS variables
@@ -34,6 +35,5 @@ module.exports = {
   },
   plugins: [],
 };
-
 
 
