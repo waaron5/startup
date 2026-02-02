@@ -4,36 +4,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="dist/output.css" />
     <title>The Quisling - Results</title>
 </head>
 
-<body>
+<body class="bg-bg text-text min-h-screen flex flex-col items-center">
 
-    <header>
-        <!-- Required header-->
-        <h1>The QuiSling</h1>
+    <header class="flex flex-col justify-center items-center mt-8 mb-8 text-center">
+        <!-- Required header (temporary)-->
+        <h1 class="font-metal text-8xl text-text text-center leading-none">
+            <span class="block sm:inline">The</span>
+            <span class="block sm:inline">QuiSling</span>
+        </h1>
         <!-- <p>Trust No One.</p> -->
 
-        <ul>
-            <li><a href="index.html">home</a></li>
-            <li><a href="game.html">game</a></li>
-            <li><a href="profile.html">profile</a></li>
-            <li><a href="results.html">results</a></li>
+        <ul class="flex flex-row space-x-4 margin-top-1 p-2 m-1 text-text-muted">
+            <li><a class="hover:text-text" href="index.html">home</a></li>
+            <li><a class="hover:text-text" href="game.html">game</a></li>
+            <li><a class="hover:text-text" href="profile.html">profile</a></li>
+            <li><a class="hover:text-text" href="results.html">results</a></li>
         </ul>
     </header>
 
-    <main>
-        <section>
-            <h2>Match Results</h2>
-            <p>
+    <main class="flex-1 flex flex-col items-center gap-6 text-center">
+        <section class="card w-full max-w-xl">
+            <h2 class="text-2xl mb-2">Match Results</h2>
+            <p class="text-text-muted">
                 Outcome:
-                <strong>Win</strong>
+                <strong class="text-text">Win</strong>
             </p>
         </section>
 
-        <section>
-            <h3>Round Order</h3>
-            <ol>
+        <section class="card w-full max-w-xl text-left">
+            <h3 class="text-xl mb-2">Round Order</h3>
+            <ol class="list-decimal list-inside text-text-muted">
                 <li>Round 1: Win</li>
                 <li>Round 2: Loss</li>
                 <li>Round 3: Win</li>
@@ -43,20 +47,21 @@
             </ol>
         </section>
 
-        <section>
-            <h3>Next</h3>
-            <p>
-                <a href="game.html">Play again</a>
-                |
-                <a href="index.html">Back to lobby</a>
+        <section class="card w-full max-w-xl">
+            <h3 class="text-xl mb-2">Next</h3>
+            <p class="text-text-muted">
+                <a class="hover:text-text" href="game.html">Play again</a>
+                <span class="mx-2 text-text-muted">|</span>
+                <a class="hover:text-text" href="index.html">Back to lobby</a>
             </p>
         </section>
     </main>
 
-    <footer>
+    <footer class="mt-auto text-text-muted flex flex-col items-center gap-2 pb-4">
         <!--Required footer-->
+
         <div>Aaron Wood</div>
-        <a href="https://github.com/waaron5/startup.git">GitHub</a>
+        <a class="hover:text-text" href="https://github.com/waaron5/startup.git">GitHub</a>
     </footer>
 
 </body>
