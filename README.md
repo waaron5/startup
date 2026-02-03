@@ -117,7 +117,7 @@ For this deliverable I built out the structure of my application using HTML.
 
 ## CSS deliverable
 
-For this deliverable I properly styled the application into its final appearance.
+For this deliverable I properly styled the application into its mostly final appearance (it will change as I add interactivity, but its mostly good).
 
 - [x] **Header, footer, and main content body**
 - [x] **Navigation elements** - Added game-like styling.
