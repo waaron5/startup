@@ -10,10 +10,10 @@ export default function SiteHeader({ subtitle }) {
       </h1>
       {subtitle ? (
         <p className="text-center text-text-muted mt-8">
-          Collaborate to pull off daring heists against a corrupt regime, but
+          <em>Collaborate to pull off daring heists against a corrupt regime, but
           remember:
           <br />
-          one player is not who they claim to be.
+          one player is not who they claim to be.</em>
         </p>
       ) : null}
     </header>
