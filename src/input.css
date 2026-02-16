@@ -24,6 +24,13 @@
     --success: #F2C97D;
   }
 
+  /* Utility classes */
+  .no-scroll {
+    @apply overflow-hidden h-full;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+
   /* Global styling */
   body {
     @apply font-sanspro;

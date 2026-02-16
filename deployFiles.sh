@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 while getopts k:h:s: flag
 do
@@ -17,6 +18,10 @@ fi
 
 printf "\n----> Deploying files for $service to $hostname with $key\n"
 
+# Step 0
+printf "\n----> Build frontend distribution (Vite).\n"
+npm run build
+
 # Step 1
 printf "\n----> Clear out the previous distribution on the target.\n"
 ssh -i "$key" ubuntu@$hostname << ENDSSH
@@ -25,5 +30,5 @@ mkdir -p services/${service}/public
 ENDSSH
 
 # Step 2
-printf "\n----> Copy the distribution package to the target.\n"
-scp -r -i "$key" * ubuntu@$hostname:services/$service/public
+printf "\n----> Copy Vite dist files to the target.\n"
+scp -r -i "$key" dist/* ubuntu@$hostname:services/$service/public

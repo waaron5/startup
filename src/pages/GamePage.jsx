@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import TopNav from "../components/TopNav";
+import townMap from "../assets/images/town-map.png";
+import useNoScroll from "../hooks/useNoScroll";
 
 export default function GamePage() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  useNoScroll();
 
   return (
     <div className="bg-bg text-text min-h-screen flex flex-col items-center">
@@ -51,7 +54,7 @@ export default function GamePage() {
             <img
               alt="town map"
               className="map-image"
-              src="/images/town-map.png"
+              src={townMap}
               width="700"
             />
           </div>

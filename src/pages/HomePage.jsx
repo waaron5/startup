@@ -1,9 +1,11 @@
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
+import useNoScroll from "../hooks/useNoScroll";
 
 export default function HomePage() {
   const navigate = useNavigate();
+  useNoScroll();
 
   function handleJoinRoom(event) {
     event.preventDefault();
