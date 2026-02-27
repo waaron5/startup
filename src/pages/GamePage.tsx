@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import StorageRecoveryBanner from "../components/StorageRecoveryBanner";
 import TopNav from "../components/TopNav";
 import townMap from "../assets/images/town-map.png";
 import { BUILDINGS } from "../constants/buildings";
@@ -249,6 +250,8 @@ export default function GamePage() {
           Leave room
         </button>
       </nav>
+
+      <StorageRecoveryBanner />
 
       <dialog className="card max-w-lg w-[90vw]" id="how-to-play" open={isHelpOpen}>
         <form className="flex justify-end" method="dialog">

@@ -1,3 +1,5 @@
+const corruptedStorageKeys = new Set<string>();
+
 export function readJSON<T>(key: string, fallback: T): T {
   try {
     const rawValue = localStorage.getItem(key);
@@ -8,6 +10,7 @@ export function readJSON<T>(key: string, fallback: T): T {
 
     return JSON.parse(rawValue) as T;
   } catch {
+    corruptedStorageKeys.add(key);
     return fallback;
   }
 }
@@ -29,4 +32,24 @@ export function updateJSON<T>(
   const updatedValue = updater(currentValue);
   writeJSON(key, updatedValue);
   return updatedValue;
+}
+
+export function getCorruptedStorageKeys(): string[] {
+  return [...corruptedStorageKeys];
+}
+
+export function clearCorruptedStorageState(): void {
+  corruptedStorageKeys.clear();
+}
+
+export function resetStorageKeys(keys: string[]): void {
+  keys.forEach((key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Ignore storage removal errors in frontend-only mode.
+    }
+  });
+
+  clearCorruptedStorageState();
 }

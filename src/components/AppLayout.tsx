@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import StorageRecoveryBanner from "./StorageRecoveryBanner";
 import SiteFooter from "./SiteFooter";
 
 type AppLayoutProps = {
@@ -15,6 +16,7 @@ export default function AppLayout({
   return (
     <div className="bg-bg text-text min-h-screen flex flex-col">
       {header}
+      <StorageRecoveryBanner />
       <main className={mainClassName}>{children}</main>
       <SiteFooter />
     </div>
