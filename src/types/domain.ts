@@ -39,6 +39,7 @@ export type GameSession = {
   startedAt: string;
   durationSeconds: number;
   remainingSeconds: number;
+  turnsPlayed: number;
   selectedBuildingId: string | null;
   actionLog: string[];
   score: number;

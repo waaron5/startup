@@ -8,8 +8,8 @@ import {
 } from "react";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { createId, nowIso } from "../lib/time";
-import { readJSON, writeJSON } from "../lib/storage";
-import type { AuthSession, UserRecord, UserStats } from "../types/domain";
+import { readJSON, updateJSON, writeJSON } from "../lib/storage";
+import type { AuthSession, GameResult, UserRecord, UserStats } from "../types/domain";
 
 type AuthResult =
   | {
@@ -40,6 +40,7 @@ type AuthContextValue = {
   register: (input: RegisterInput) => AuthResult;
   logout: () => void;
   updateProfile: (input: ProfileUpdateInput) => AuthResult;
+  recordGameResult: (result: GameResult) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -231,6 +232,42 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }
 
+  function recordGameResult(result: GameResult): void {
+    updateJSON<GameResult[]>(STORAGE_KEYS.results, [], (currentResults) => {
+      if (currentResults.some((existingResult) => existingResult.id === result.id)) {
+        return currentResults;
+      }
+
+      return [result, ...currentResults];
+    });
+
+    setUsers((currentUsers) =>
+      currentUsers.map((candidate) => {
+        if (candidate.id !== result.userId) {
+          return candidate;
+        }
+
+        const gamesPlayed = candidate.stats.gamesPlayed + 1;
+        const wins = candidate.stats.wins + (result.outcome === "win" ? 1 : 0);
+        const losses = candidate.stats.losses + (result.outcome === "loss" ? 1 : 0);
+        const winRate = gamesPlayed ? Math.round((wins / gamesPlayed) * 100) : 0;
+
+        return {
+          ...candidate,
+          stats: {
+            gamesPlayed,
+            wins,
+            losses,
+            winRate,
+            totalScore: candidate.stats.totalScore + result.score,
+            bestScore: Math.max(candidate.stats.bestScore, result.score),
+          },
+          history: [result.id, ...candidate.history],
+        };
+      })
+    );
+  }
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -240,8 +277,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       register,
       logout,
       updateProfile,
+      recordGameResult,
     }),
-    [user, session]
+    [session, user, users]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

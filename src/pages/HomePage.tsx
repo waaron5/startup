@@ -38,6 +38,7 @@ function buildGameSession(roomCode: string, userId: string, playerName: string):
     startedAt: timestamp,
     durationSeconds: DEFAULT_GAME_DURATION_SECONDS,
     remainingSeconds: DEFAULT_GAME_DURATION_SECONDS,
+    turnsPlayed: 0,
     selectedBuildingId: null,
     actionLog: [`Session created at ${timestamp}`],
     score: 0,
