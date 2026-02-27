@@ -14,6 +14,7 @@ This plan is written as execution instructions for an AI coding agent to impleme
 
 - Keep existing visual styling and page structure as much as possible.
 - Use current stack: Vite + React + React Router + Tailwind.
+- Use TypeScript for all new source files (`.ts`/`.tsx` only).
 - No server, no WebSocket yet.
 - Persist all state in `localStorage` with versioned keys.
 - Treat credential storage as temporary/insecure dev behavior (explicitly documented in code comments and README updates).
@@ -35,27 +36,27 @@ Implement with lightweight feature modules + context/state hooks.
 
 Create these folders/files:
 
-- `src/context/AuthContext.jsx`
-- `src/context/GameContext.jsx`
-- `src/components/ProtectedRoute.jsx`
-- `src/components/RequireGameSession.jsx`
-- `src/lib/storage.js`
-- `src/lib/roomCode.js`
-- `src/lib/time.js`
-- `src/lib/gameEngine.js`
-- `src/lib/gameConfig.js`
-- `src/hooks/useLocalStorageState.js`
-- `src/hooks/useGameTimer.js`
-- `src/constants/storageKeys.js`
-- `src/constants/buildings.js`
-- `src/constants/gamePhases.js`
+- `src/context/AuthContext.tsx`
+- `src/context/GameContext.tsx`
+- `src/components/ProtectedRoute.tsx`
+- `src/components/RequireGameSession.tsx`
+- `src/lib/storage.ts`
+- `src/lib/roomCode.ts`
+- `src/lib/time.ts`
+- `src/lib/gameEngine.ts`
+- `src/lib/gameConfig.ts`
+- `src/hooks/useLocalStorageState.ts`
+- `src/hooks/useGameTimer.ts`
+- `src/constants/storageKeys.ts`
+- `src/constants/buildings.ts`
+- `src/constants/gamePhases.ts`
 
 Optional UI components if needed for clarity/reuse:
 
-- `src/components/game/MapBuildingButton.jsx`
-- `src/components/game/GameStatusPanel.jsx`
-- `src/components/game/GameTimer.jsx`
-- `src/components/auth/AuthForm.jsx`
+- `src/components/game/MapBuildingButton.tsx`
+- `src/components/game/GameStatusPanel.tsx`
+- `src/components/game/GameTimer.tsx`
+- `src/components/auth/AuthForm.tsx`
 
 ### 4.2 Storage keys (versioned)
 
@@ -69,9 +70,9 @@ Use these keys:
 
 ### 4.3 Core entities (shape contracts)
 
-Implement these JS object shapes consistently:
+Implement these TypeScript interfaces/shapes consistently:
 
-```js
+```ts
 // User
 {
   id: "usr_xxx",
@@ -92,7 +93,7 @@ Implement these JS object shapes consistently:
 }
 ```
 
-```js
+```ts
 // Active auth session
 {
   userId: "usr_xxx",
@@ -102,7 +103,7 @@ Implement these JS object shapes consistently:
 }
 ```
 
-```js
+```ts
 // Current local game session
 {
   id: "game_xxx",
@@ -122,7 +123,7 @@ Implement these JS object shapes consistently:
 }
 ```
 
-```js
+```ts
 // Saved result record
 {
   id: "result_xxx",
@@ -154,13 +155,13 @@ Implement these JS object shapes consistently:
 - `ProtectedRoute`: ensures auth session exists.
 - `RequireGameSession`: ensures active game exists before `GamePage`.
 
-Integrate wrappers in `src/App.jsx`.
+Integrate wrappers in `src/App.tsx`.
 
 ## 6. Game Model (Frontend Simulation)
 
 ### 6.1 Building definitions
 
-Create `src/constants/buildings.js` with fixed building metadata:
+Create `src/constants/buildings.ts` with fixed building metadata:
 
 - `id`, `label`, map position (`xPct`, `yPct`)
 - `difficulty`
@@ -175,6 +176,7 @@ Use 5-8 buildings to match game UI complexity.
 - 4 uppercase letters only (`A-Z`).
 - On create: generate code and avoid collisions against recent local sessions.
 - On join: normalize input to uppercase; validate format and existence in local game/session records.
+- Scope note: in frontend-only mode, “join room” is local to the same browser storage (not cross-device and not true multiplayer yet).
 
 ### 6.3 Timer behavior
 
@@ -195,6 +197,18 @@ Phases:
 
 Each primary button must be phase-aware and disabled when invalid.
 
+### 6.5 Deterministic default game rules (required baseline)
+
+To prevent implementation ambiguity, use these defaults unless explicitly changed later:
+
+- `durationSeconds = 180`
+- `maxTurns = 8`
+- `maxPenalties = 3`
+- `winObjectiveProgress = 100`
+- Win when `objectiveProgress >= winObjectiveProgress` before timeout and before penalties hit threshold.
+- Loss when `penalties >= maxPenalties`, or time expires before objective completion, or turn count reaches `maxTurns` without objective completion.
+- No random outcomes in this phase. Building outcome should be deterministic from: selected building difficulty, current role modifier, and current phase state.
+
 ## 7. Step-by-Step Implementation Plan
 
 ## Step 0: Create feature branch and verify baseline
@@ -212,13 +226,13 @@ Done when:
 
 Tasks:
 
-- Add `storageKeys.js` constants.
-- Add `storage.js` helpers:
+- Add `storageKeys.ts` constants.
+- Add `storage.ts` helpers:
   - `readJSON(key, fallback)`
   - `writeJSON(key, value)`
   - `updateJSON(key, updaterFn)`
   - safe parsing + fallback on malformed data
-- Add ID helper and timestamp helper in `time.js` or `storage.js`.
+- Add ID helper and timestamp helper in `time.ts` or `storage.ts`.
 
 Done when:
 
@@ -252,7 +266,7 @@ Done when:
 
 Tasks:
 
-- Wrap `App` with `AuthProvider` in `src/main.jsx`.
+- Wrap `App` with `AuthProvider` in `src/main.tsx`.
 - Add `GameProvider` placeholder with minimal state and setters.
 
 Done when:
@@ -264,10 +278,11 @@ Done when:
 Tasks:
 
 - Add `ProtectedRoute` and `RequireGameSession`.
-- Update `App.jsx` route definitions:
+- Update `App.tsx` route definitions:
   - Guard `/game`
   - Guard `/results` if no result exists
 - Use router state/query to pass redirect reason messages.
+- Results-nav UX rule: keep nav link visible, but redirect to `/` with a clear message if no result exists.
 
 Done when:
 
@@ -302,7 +317,7 @@ Tasks:
   - navigate to `/game`
 - Join room:
   - validate room code format
-  - load existing game seed/session (or create local simulated join state)
+  - load existing game seed/session from local browser storage (or create local simulated join state)
   - navigate to `/game`
 - Show inline form errors for invalid/missing room codes.
 
@@ -314,7 +329,7 @@ Done when:
 
 Tasks:
 
-- Add `gamePhases.js`, `gameConfig.js`, `gameEngine.js`.
+- Add `gamePhases.ts`, `gameConfig.ts`, `gameEngine.ts`.
 - Implement pure functions:
   - `startGame(session)`
   - `selectBuilding(session, buildingId)`
@@ -405,7 +420,8 @@ Tasks:
 - Add defensive empty/loading/fallback states on all pages.
 - Handle corrupted localStorage gracefully (reset with warning).
 - Validate mobile layout still works with map controls and timer.
-- Run lint/build and fix errors.
+- Run `npm run typecheck` and `npm run build`.
+- Run lint only if lint tooling is configured; otherwise skip lint for this phase.
 
 Done when:
 
@@ -433,8 +449,8 @@ Execute and verify:
 Design now so backend swap is minimal:
 
 - Keep auth/game actions behind context methods (single replacement seam).
-- Keep storage access centralized (`storage.js`) so API calls can replace internals.
-- Keep pure game logic in `gameEngine.js` to share with server validation later.
+- Keep storage access centralized (`storage.ts`) so API calls can replace internals.
+- Keep pure game logic in `gameEngine.ts` to share with server validation later.
 - Keep data shapes stable and versioned.
 
 ## 10. Definition of Done
@@ -453,6 +469,7 @@ The “Reactify” phase is complete when:
 - Reuse existing page/component files; avoid large rewrites unless needed.
 - Favor small pure utility functions over large page-level handlers.
 - Keep behavior deterministic; avoid random scoring unless intentionally configured.
+- Define shared interfaces/types in one location and import them (avoid ad-hoc inline object typing everywhere).
 - Add brief comments only where logic is non-obvious.
 - Preserve current Tailwind classes and visual style unless interaction states require additions.
 - If introducing test tooling later, do so in separate PR/step to reduce risk in this implementation pass.
