@@ -6,6 +6,7 @@ import { BUILDINGS } from "../constants/buildings";
 import { GAME_PHASE_LABELS, GAME_PHASES } from "../constants/gamePhases";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
+import { useGame } from "../context/GameContext";
 import useNoScroll from "../hooks/useNoScroll";
 import useGameTimer from "../hooks/useGameTimer";
 import {
@@ -15,7 +16,6 @@ import {
   finalizeSession,
   getPhaseHint,
   getTimeProgressPercent,
-  hydrateGameSession,
   resolveTurn,
   selectBuilding,
   withRemainingSeconds,
@@ -23,28 +23,16 @@ import {
 import { GAME_RULES } from "../lib/gameConfig";
 import { readJSON, writeJSON } from "../lib/storage";
 import { createId, formatClock, nowIso } from "../lib/time";
-import type { GameLobby, GameOutcome, GameResult, GameSession } from "../types/domain";
+import type { GameLobby, GameOutcome, GameResult } from "../types/domain";
 
 export default function GamePage() {
   const navigate = useNavigate();
   const { user, recordGameResult } = useAuth();
+  const { gameSession, setGameSession, clearGameSession } = useGame();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const hasSavedResult = useRef(false);
   useNoScroll();
-
-  const [gameSession, setGameSession] = useState<GameSession | null>(() => {
-    const storedSession = readJSON<GameSession | null>(STORAGE_KEYS.gameSession, null);
-    return storedSession ? hydrateGameSession(storedSession) : null;
-  });
-
-  useEffect(() => {
-    if (!gameSession) {
-      return;
-    }
-
-    writeJSON(STORAGE_KEYS.gameSession, gameSession);
-  }, [gameSession]);
 
   const handleTimerTick = useCallback((nextSeconds: number) => {
     setGameSession((currentSession) => {
@@ -143,10 +131,10 @@ export default function GamePage() {
         : lobby
     );
     writeJSON(STORAGE_KEYS.games, updatedLobbies);
-    writeJSON(STORAGE_KEYS.gameSession, null);
+    clearGameSession();
 
     navigate("/results");
-  }, [gameSession, navigate, recordGameResult]);
+  }, [clearGameSession, gameSession, navigate, recordGameResult]);
 
   const selectedBuilding = useMemo(
     () => BUILDINGS.find((building) => building.id === gameSession?.selectedBuildingId) ?? null,
@@ -237,7 +225,7 @@ export default function GamePage() {
       .filter((lobby) => lobby.players.length > 0);
 
     writeJSON(STORAGE_KEYS.games, nextLobbies);
-    writeJSON(STORAGE_KEYS.gameSession, null);
+    clearGameSession();
     navigate("/", {
       state: {
         message: `You left room ${gameSession.roomCode}.`,

@@ -4,53 +4,23 @@ import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
+import { useGame } from "../context/GameContext";
 import useNoScroll from "../hooks/useNoScroll";
+import { createGameSession } from "../lib/gameSession";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "../lib/roomCode";
 import { readJSON, writeJSON } from "../lib/storage";
 import { createId, nowIso } from "../lib/time";
-import type { GameLobby, GameRole, GameSession, UserRecord } from "../types/domain";
-
-const DEFAULT_GAME_DURATION_SECONDS = 180;
-const GAME_ROLES: GameRole[] = ["Infiltrator", "Lookout", "Saboteur", "Engineer"];
+import type { GameLobby, UserRecord } from "../types/domain";
 
 type RouteMessageState = {
   message?: string;
 };
 
-function selectRoleForUser(userId: string): GameRole {
-  const roleSeed = userId
-    .split("")
-    .reduce((runningTotal, character) => runningTotal + character.charCodeAt(0), 0);
-
-  return GAME_ROLES[roleSeed % GAME_ROLES.length];
-}
-
-function buildGameSession(roomCode: string, userId: string, playerName: string): GameSession {
-  const timestamp = nowIso();
-
-  return {
-    id: createId("game"),
-    roomCode,
-    userId,
-    playerName,
-    role: selectRoleForUser(userId),
-    phase: "planning",
-    startedAt: timestamp,
-    durationSeconds: DEFAULT_GAME_DURATION_SECONDS,
-    remainingSeconds: DEFAULT_GAME_DURATION_SECONDS,
-    turnsPlayed: 0,
-    selectedBuildingId: null,
-    actionLog: [`Session created at ${timestamp}`],
-    score: 0,
-    objectiveProgress: 0,
-    penalties: 0,
-  };
-}
-
 export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user } = useAuth();
+  const { setGameSession } = useGame();
   useNoScroll();
 
   const routeMessage = (location.state as RouteMessageState | null)?.message ?? "";
@@ -136,9 +106,12 @@ export default function HomePage() {
     );
 
     writeJSON(STORAGE_KEYS.games, nextLobbies);
-    writeJSON(
-      STORAGE_KEYS.gameSession,
-      buildGameSession(normalizedCode, currentUser.id, playerName)
+    setGameSession(
+      createGameSession({
+        roomCode: normalizedCode,
+        userId: currentUser.id,
+        playerName,
+      })
     );
     navigate("/game");
   }
@@ -182,9 +155,12 @@ export default function HomePage() {
     };
 
     writeJSON(STORAGE_KEYS.games, [...lobbies, newLobby]);
-    writeJSON(
-      STORAGE_KEYS.gameSession,
-      buildGameSession(newRoomCode, currentUser.id, playerName)
+    setGameSession(
+      createGameSession({
+        roomCode: newRoomCode,
+        userId: currentUser.id,
+        playerName,
+      })
     );
     setRoomCode(newRoomCode);
     navigate("/game");

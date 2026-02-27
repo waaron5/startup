@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
-import { readJSON } from "../lib/storage";
-import type { GameSession } from "../types/domain";
+import { useGame } from "../context/GameContext";
 
 type RequireGameSessionProps = {
   children: ReactNode;
@@ -11,8 +9,8 @@ type RequireGameSessionProps = {
 
 export default function RequireGameSession({ children }: RequireGameSessionProps) {
   const { user } = useAuth();
+  const { gameSession } = useGame();
   const location = useLocation();
-  const gameSession = readJSON<GameSession | null>(STORAGE_KEYS.gameSession, null);
 
   if (!gameSession || !user || gameSession.userId !== user.id) {
     return (

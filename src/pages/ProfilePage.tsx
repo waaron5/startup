@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
+import { readJSON } from "../lib/storage";
+import type { GameResult } from "../types/domain";
 
 type RouteMessageState = {
   message?: string;
@@ -37,6 +40,14 @@ export default function ProfilePage() {
     totalScore: 0,
     bestScore: 0,
   };
+
+  const savedResults = readJSON<GameResult[]>(STORAGE_KEYS.results, []);
+  const recentResults = user
+    ? user.history
+        .map((matchId) => savedResults.find((result) => result.id === matchId))
+        .filter((result): result is GameResult => Boolean(result))
+        .slice(0, 5)
+    : [];
 
   function clearMessages() {
     setStatusMessage("");
@@ -224,10 +235,25 @@ export default function ProfilePage() {
 
       <section className="card w-full max-w-xl text-center">
         <h2 className="text-2xl mb-2">Recent Matches</h2>
-        {user?.history.length ? (
-          <ul className="text-text-muted">
-            {user.history.slice(0, 5).map((matchId) => (
-              <li key={matchId}>{matchId}</li>
+        {recentResults.length ? (
+          <ul className="text-text-muted space-y-2">
+            {recentResults.map((result) => (
+              <li key={result.id} className="border border-white/10 rounded-md p-2">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <span>
+                    {result.outcome.toUpperCase()} | Score {result.score} | Room {result.roomCode}
+                  </span>
+                  <Link
+                    className="hover:text-text"
+                    to={`/results?resultId=${encodeURIComponent(result.id)}`}
+                  >
+                    View
+                  </Link>
+                </div>
+                <div className="text-sm">
+                  {new Date(result.completedAt).toLocaleString()} | Turns {result.summary.turnsPlayed}
+                </div>
+              </li>
             ))}
           </ul>
         ) : (
