@@ -8,7 +8,11 @@ const navItems = [
   { to: "/credits", label: "credits" },
 ];
 
-function navLinkClass({ isActive }) {
+type NavLinkClassProps = {
+  isActive: boolean;
+};
+
+function navLinkClass({ isActive }: NavLinkClassProps) {
   return isActive ? "text-text" : "hover:text-text";
 }
 

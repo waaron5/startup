@@ -1,3 +1,4 @@
+import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
@@ -7,7 +8,7 @@ export default function HomePage() {
   const navigate = useNavigate();
   useNoScroll();
 
-  function handleJoinRoom(event) {
+  function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     navigate("/game");
   }

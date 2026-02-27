@@ -1,6 +1,10 @@
 import TopNav from "./TopNav";
 
-export default function SiteHeader({ subtitle }) {
+type SiteHeaderProps = {
+  subtitle?: boolean;
+};
+
+export default function SiteHeader({ subtitle }: SiteHeaderProps) {
   return (
     <header className="flex flex-col justify-center items-center mt-12 mb-8">
       <TopNav />

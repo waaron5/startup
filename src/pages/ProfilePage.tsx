@@ -1,8 +1,9 @@
+import type { FormEvent } from "react";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
 
 export default function ProfilePage() {
-  function handleAccountSubmit(event) {
+  function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
   }
 
