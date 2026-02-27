@@ -1,10 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useLocation } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
 import { useAuth } from "../context/AuthContext";
 
+type RouteMessageState = {
+  message?: string;
+};
+
 export default function ProfilePage() {
   const { isAuthenticated, user, login, logout, register, updateProfile } = useAuth();
+  const location = useLocation();
+  const routeMessage = (location.state as RouteMessageState | null)?.message ?? "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -97,6 +104,9 @@ export default function ProfilePage() {
     <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col items-center gap-6">
       <section className="card w-full max-w-xl">
         <h2 className="text-2xl mb-4 text-center">Account</h2>
+        {!isAuthenticated && routeMessage ? (
+          <p className="text-center text-text-muted mb-4">{routeMessage}</p>
+        ) : null}
         {statusMessage ? <p className="text-center text-success mb-4">{statusMessage}</p> : null}
         {errorMessage ? <p className="text-center text-danger mb-4">{errorMessage}</p> : null}
 

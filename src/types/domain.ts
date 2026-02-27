@@ -60,3 +60,15 @@ export type GameResult = {
   };
   completedAt: string;
 };
+
+export type GameLobbyStatus = "open" | "in_progress" | "complete";
+
+export type GameLobby = {
+  id: string;
+  roomCode: string;
+  createdAt: string;
+  updatedAt: string;
+  hostUserId: string;
+  players: string[];
+  status: GameLobbyStatus;
+};
