@@ -1,3 +1,5 @@
+# ./deployFiles.sh -k /Users/aaronwood/.ssh/thequisling-server-us-east-1.pem -h thequisling.online -s startup
+
 #!/bin/bash
 set -euo pipefail
 

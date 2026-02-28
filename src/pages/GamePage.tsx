@@ -235,9 +235,11 @@ export default function GamePage() {
   }
 
   return (
-    <div className="bg-bg text-text min-h-screen flex flex-col items-center">
-      <nav className="flex flex-row items-center justify-center gap-6 text-text-muted mt-6">
-        <TopNav />
+    <div className="bg-bg text-text h-[100dvh] overflow-hidden flex flex-col items-center">
+      <nav className="w-full px-3 pt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs sm:text-sm text-text-muted">
+        <div className="hidden md:block">
+          <TopNav />
+        </div>
         <button
           className="hover:text-text"
           onClick={() => setIsHelpOpen(true)}
@@ -273,11 +275,8 @@ export default function GamePage() {
         </ul>
       </dialog>
 
-      <header
-        className="flex flex-col justify-center items-center mt-8 mb-8 text-center"
-        id="game-header"
-      >
-        <div className="w-[80vw] max-w-xl">
+      <header className="w-full px-3 mt-1 mb-2 text-center" id="game-header">
+        <div className="w-full max-w-xl mx-auto">
           <div className="flex justify-between text-sm text-text-muted mb-2">
             <span>Mission Timer</span>
             <span>{formatClock(gameSession.remainingSeconds)}</span>
@@ -291,33 +290,36 @@ export default function GamePage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full flex flex-col items-center justify-start px-4" id="game-main">
-        <section className="w-full max-w-5xl card mb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+      <main
+        className="flex-1 min-h-0 w-full flex flex-col items-center gap-2 sm:gap-3 px-3 pb-2 sm:px-4 sm:pb-3"
+        id="game-main"
+      >
+        <section className="w-full max-w-5xl card !p-3 sm:!p-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
             <div>
-              <p className="text-text-muted text-sm">Phase</p>
-              <p className="text-lg">{GAME_PHASE_LABELS[gameSession.phase]}</p>
+              <p className="text-text-muted text-xs sm:text-sm">Phase</p>
+              <p className="text-sm sm:text-lg">{GAME_PHASE_LABELS[gameSession.phase]}</p>
             </div>
             <div>
-              <p className="text-text-muted text-sm">Objective Progress</p>
-              <p className="text-lg">
+              <p className="text-text-muted text-xs sm:text-sm">Objective Progress</p>
+              <p className="text-sm sm:text-lg">
                 {gameSession.objectiveProgress}/{GAME_RULES.winObjectiveProgress}
               </p>
             </div>
             <div>
-              <p className="text-text-muted text-sm">Risk</p>
-              <p className="text-lg">
+              <p className="text-text-muted text-xs sm:text-sm">Risk</p>
+              <p className="text-sm sm:text-lg">
                 {gameSession.penalties}/{GAME_RULES.maxPenalties} penalties
               </p>
             </div>
           </div>
-          <div className="mt-3 text-center text-text-muted">
+          <div className="mt-2 text-center text-xs sm:text-sm text-text-muted">
             Turns: {gameSession.turnsPlayed}/{GAME_RULES.maxTurns}
           </div>
         </section>
 
-        <section className="w-full max-w-5xl card">
-          <div className="relative w-full">
+        <section className="w-full max-w-5xl card !p-3 sm:!p-4 flex flex-col flex-1 min-h-0">
+          <div className="relative mx-auto w-full max-w-[min(84vw,36dvh)] sm:max-w-[min(68vw,46dvh)] md:max-w-[min(62vw,54dvh)] lg:max-w-[min(56vw,60dvh)]">
             <img
               alt="town map"
               className="w-full rounded-lg border border-white/10"
@@ -332,7 +334,7 @@ export default function GamePage() {
                 <button
                   key={building.id}
                   aria-label={`Select ${building.label}`}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 px-2 py-1 text-xs rounded border transition-colors ${
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 px-1.5 py-1 text-[11px] leading-none rounded border transition-colors ${
                     isSelected
                       ? "bg-primary text-text border-primary-hover"
                       : "bg-panel/90 text-text-muted border-white/20 hover:text-text"
@@ -347,16 +349,16 @@ export default function GamePage() {
             })}
           </div>
 
-          <div className="mt-4 flex flex-col gap-2">
-            <p className="text-text-muted text-center">
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-text-muted text-center text-xs sm:text-sm">
               {selectedBuilding
                 ? `Selected target: ${selectedBuilding.label} (difficulty ${selectedBuilding.difficulty})`
                 : "Select a target to begin your turn."}
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <div className="flex flex-wrap gap-2 justify-center">
               <button
-                className="btn-primary"
+                className="btn-primary text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2"
                 disabled={!canLockTarget}
                 onClick={handleLockTarget}
                 type="button"
@@ -364,7 +366,7 @@ export default function GamePage() {
                 Lock Target
               </button>
               <button
-                className="btn-primary"
+                className="btn-primary text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2"
                 disabled={!canCommitAction}
                 onClick={handleCommitAction}
                 type="button"
@@ -372,7 +374,7 @@ export default function GamePage() {
                 Execute Action
               </button>
               <button
-                className="btn-primary"
+                className="btn-primary text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2"
                 disabled={!canResolveTurn}
                 onClick={handleResolveTurn}
                 type="button"
@@ -381,13 +383,13 @@ export default function GamePage() {
               </button>
             </div>
 
-            {statusMessage ? <p className="text-danger text-center">{statusMessage}</p> : null}
+            {statusMessage ? <p className="text-danger text-xs sm:text-sm text-center">{statusMessage}</p> : null}
           </div>
         </section>
 
-        <section className="w-full max-w-5xl card mt-4">
-          <h3 className="text-xl mb-2 text-center">Action Log</h3>
-          <ul className="text-text-muted max-h-40 overflow-y-auto space-y-1">
+        <section className="w-full max-w-5xl card !p-3 sm:!p-4">
+          <h3 className="text-sm sm:text-xl mb-1 sm:mb-2 text-center">Action Log</h3>
+          <ul className="text-text-muted text-xs sm:text-sm max-h-20 sm:max-h-40 overflow-y-auto space-y-1 pr-1">
             {gameSession.actionLog.slice(-8).map((entry, index) => (
               <li key={`${entry}-${index}`}>{entry}</li>
             ))}
@@ -396,20 +398,20 @@ export default function GamePage() {
       </main>
 
       <footer
-        className="mt-auto text-text-muted flex flex-col items-center gap-2 pb-4"
+        className="w-full text-text-muted flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-xs"
         id="game-footer"
       >
-        <div className="player flex items-center gap-3">
+        <div className="player flex items-center gap-2">
           <span id="player-name">{gameSession.playerName}</span>
           <span id="player-role">{gameSession.role}</span>
         </div>
 
-        <div aria-live="polite" className="status text-center" id="phase-hint">
+        <div aria-live="polite" className="status text-center w-full sm:w-auto" id="phase-hint">
           {phaseHint}
         </div>
 
-        <div>Aaron Wood</div>
-        <a className="hover:text-text" href="https://github.com/waaron5/startup.git">
+        <div className="hidden sm:block">Aaron Wood</div>
+        <a className="hidden sm:block hover:text-text" href="https://github.com/waaron5/startup.git">
           GitHub
         </a>
       </footer>

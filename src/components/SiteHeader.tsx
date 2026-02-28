@@ -8,9 +8,8 @@ export default function SiteHeader({ subtitle }: SiteHeaderProps) {
   return (
     <header className="flex flex-col justify-center items-center mt-12 mb-8">
       <TopNav />
-      <h1 className="font-metal text-8xl text-text text-center leading-none">
-        <span className="block sm:inline">The </span>
-        <span className="block sm:inline">QuiSling</span>
+      <h1 className="font-metal text-6xl text-text text-center leading-none">
+        <span className="block sm:inline">The Quisling</span>
       </h1>
       {subtitle ? (
         <p className="text-center text-text-muted mt-8">

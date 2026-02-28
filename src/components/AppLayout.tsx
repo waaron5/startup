@@ -14,7 +14,7 @@ export default function AppLayout({
   mainClassName = "flex-1",
 }: AppLayoutProps) {
   return (
-    <div className="bg-bg text-text min-h-screen flex flex-col">
+    <div className="bg-bg text-text min-h-screen flex flex-col px-3 sm:px-4">
       {header}
       <StorageRecoveryBanner />
       <main className={mainClassName}>{children}</main>
