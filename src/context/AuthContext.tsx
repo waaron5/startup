@@ -7,7 +7,14 @@ import {
   type PropsWithChildren,
 } from "react";
 import { STORAGE_KEYS } from "../constants/storageKeys";
-import { createId, nowIso } from "../lib/time";
+import {
+  ApiRequestError,
+  fetchCurrentUser,
+  loginWithService,
+  logoutFromService,
+  registerWithService,
+  type ServiceUser,
+} from "../lib/api";
 import { readJSON, updateJSON, writeJSON } from "../lib/storage";
 import type { AuthSession, GameResult, UserRecord, UserStats } from "../types/domain";
 
@@ -36,9 +43,10 @@ type AuthContextValue = {
   user: UserRecord | null;
   session: AuthSession | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => AuthResult;
-  register: (input: RegisterInput) => AuthResult;
-  logout: () => void;
+  isAuthLoading: boolean;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  register: (input: RegisterInput) => Promise<AuthResult>;
+  logout: () => Promise<void>;
   updateProfile: (input: ProfileUpdateInput) => AuthResult;
   recordGameResult: (result: GameResult) => void;
 };
@@ -74,6 +82,46 @@ function normalizeDisplayName(displayName: string, fallbackEmail: string): strin
   return emailPrefix;
 }
 
+function createUserRecordFromService(
+  serviceUser: ServiceUser,
+  existingUser?: UserRecord
+): UserRecord {
+  return {
+    id: serviceUser.id,
+    email: serviceUser.email,
+    password: existingUser?.password ?? "",
+    displayName: normalizeDisplayName(serviceUser.displayName, serviceUser.email),
+    createdAt: serviceUser.createdAt,
+    stats: existingUser?.stats ?? createDefaultStats(),
+    friends: existingUser?.friends ?? [],
+    history: existingUser?.history ?? [],
+  };
+}
+
+function upsertUserRecord(currentUsers: UserRecord[], nextUser: UserRecord): UserRecord[] {
+  const matchIndex = currentUsers.findIndex((candidate) => candidate.id === nextUser.id);
+
+  if (matchIndex === -1) {
+    return [...currentUsers, nextUser];
+  }
+
+  const nextUsers = [...currentUsers];
+  nextUsers[matchIndex] = nextUser;
+  return nextUsers;
+}
+
+function toAuthErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiRequestError) {
+    return error.message;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [users, setUsers] = useState<UserRecord[]>(() =>
     readJSON<UserRecord[]>(STORAGE_KEYS.users, [])
@@ -81,6 +129,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(() =>
     readJSON<AuthSession | null>(STORAGE_KEYS.session, null)
   );
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   useEffect(() => {
     writeJSON(STORAGE_KEYS.users, users);
@@ -116,36 +165,91 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [session, user]);
 
-  function login(email: string, password: string): AuthResult {
+  function syncUserFromService(serviceUser: ServiceUser): UserRecord {
+    const existingUser = users.find((candidate) => candidate.id === serviceUser.id);
+    const userRecord = createUserRecordFromService(serviceUser, existingUser);
+
+    setUsers((currentUsers) => {
+      const currentUser = currentUsers.find((candidate) => candidate.id === serviceUser.id);
+      const nextUser = createUserRecordFromService(serviceUser, currentUser);
+      return upsertUserRecord(currentUsers, nextUser);
+    });
+
+    return userRecord;
+  }
+
+  function setSessionFromUser(userRecord: UserRecord, loggedInAt: string) {
+    setSession({
+      userId: userRecord.id,
+      email: userRecord.email,
+      displayName: userRecord.displayName,
+      loggedInAt,
+    });
+  }
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function hydrateAuthFromService() {
+      try {
+        const response = await fetchCurrentUser();
+
+        if (!isActive) {
+          return;
+        }
+
+        const syncedUser = syncUserFromService(response.user);
+        setSessionFromUser(syncedUser, response.session.loggedInAt);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setSession(null);
+      } finally {
+        if (isActive) {
+          setIsAuthLoading(false);
+        }
+      }
+    }
+
+    hydrateAuthFromService();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  async function login(email: string, password: string): Promise<AuthResult> {
     const normalizedEmail = normalizeEmail(email);
 
     if (!EMAIL_REGEX.test(normalizedEmail)) {
       return { ok: false, message: "Please provide a valid email address." };
     }
 
-    const existingUser = users.find((candidate) => candidate.email === normalizedEmail);
+    try {
+      const response = await loginWithService({
+        email: normalizedEmail,
+        password,
+      });
 
-    if (!existingUser || existingUser.password !== password) {
-      return { ok: false, message: "Invalid email or password." };
+      const syncedUser = syncUserFromService(response.user);
+      setSessionFromUser(syncedUser, response.session.loggedInAt);
+
+      return {
+        ok: true,
+        message: response.message ?? "Logged in successfully.",
+        user: syncedUser,
+      };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        message: toAuthErrorMessage(error, "Unable to log in."),
+      };
     }
-
-    const nextSession: AuthSession = {
-      userId: existingUser.id,
-      email: existingUser.email,
-      displayName: existingUser.displayName,
-      loggedInAt: nowIso(),
-    };
-
-    setSession(nextSession);
-
-    return {
-      ok: true,
-      message: "Logged in successfully.",
-      user: existingUser,
-    };
   }
 
-  function register(input: RegisterInput): AuthResult {
+  async function register(input: RegisterInput): Promise<AuthResult> {
     const normalizedEmail = normalizeEmail(input.email);
 
     if (!EMAIL_REGEX.test(normalizedEmail)) {
@@ -159,41 +263,37 @@ export function AuthProvider({ children }: PropsWithChildren) {
       };
     }
 
-    const duplicateUser = users.find((candidate) => candidate.email === normalizedEmail);
+    try {
+      const response = await registerWithService({
+        email: normalizedEmail,
+        password: input.password,
+        displayName: normalizeDisplayName(input.displayName, normalizedEmail),
+      });
 
-    if (duplicateUser) {
-      return { ok: false, message: "An account with that email already exists." };
+      const syncedUser = syncUserFromService(response.user);
+      setSessionFromUser(syncedUser, response.session.loggedInAt);
+
+      return {
+        ok: true,
+        message: response.message ?? "Account created and logged in.",
+        user: syncedUser,
+      };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        message: toAuthErrorMessage(error, "Unable to create account."),
+      };
     }
-
-    const nextUser: UserRecord = {
-      id: createId("usr"),
-      email: normalizedEmail,
-      password: input.password,
-      displayName: normalizeDisplayName(input.displayName, normalizedEmail),
-      createdAt: nowIso(),
-      stats: createDefaultStats(),
-      friends: [],
-      history: [],
-    };
-
-    setUsers((currentUsers) => [...currentUsers, nextUser]);
-
-    setSession({
-      userId: nextUser.id,
-      email: nextUser.email,
-      displayName: nextUser.displayName,
-      loggedInAt: nowIso(),
-    });
-
-    return {
-      ok: true,
-      message: "Account created and logged in.",
-      user: nextUser,
-    };
   }
 
-  function logout(): void {
-    setSession(null);
+  async function logout(): Promise<void> {
+    try {
+      await logoutFromService();
+    } catch {
+      // Clear local auth state even if the network request fails.
+    } finally {
+      setSession(null);
+    }
   }
 
   function updateProfile(input: ProfileUpdateInput): AuthResult {
@@ -268,19 +368,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
     );
   }
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      session,
-      isAuthenticated: Boolean(user && session),
-      login,
-      register,
-      logout,
-      updateProfile,
-      recordGameResult,
-    }),
-    [session, user, users]
-  );
+  const value: AuthContextValue = {
+    user,
+    session,
+    isAuthenticated: Boolean(user && session),
+    isAuthLoading,
+    login,
+    register,
+    logout,
+    updateProfile,
+    recordGameResult,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

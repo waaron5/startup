@@ -12,7 +12,8 @@ type RouteMessageState = {
 };
 
 export default function ProfilePage() {
-  const { isAuthenticated, user, login, logout, register, updateProfile } = useAuth();
+  const { isAuthenticated, isAuthLoading, user, login, logout, register, updateProfile } =
+    useAuth();
   const location = useLocation();
   const routeMessage = (location.state as RouteMessageState | null)?.message ?? "";
 
@@ -22,6 +23,7 @@ export default function ProfilePage() {
   const [profileDisplayName, setProfileDisplayName] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -54,38 +56,44 @@ export default function ProfilePage() {
     setErrorMessage("");
   }
 
-  function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
+    setIsSubmitting(true);
 
-    const result = login(email, password);
+    const result = await login(email, password);
 
-    if (!result.ok) {
-      setErrorMessage(result.message);
+    if (result.ok) {
+      setStatusMessage(result.message);
+      setPassword("");
+      setIsSubmitting(false);
       return;
     }
 
-    setStatusMessage(result.message);
-    setPassword("");
+    setErrorMessage(result.message);
+    setIsSubmitting(false);
   }
 
-  function handleCreateAccount() {
+  async function handleCreateAccount() {
     clearMessages();
+    setIsSubmitting(true);
 
-    const result = register({
+    const result = await register({
       email,
       password,
       displayName: registrationDisplayName,
     });
 
-    if (!result.ok) {
-      setErrorMessage(result.message);
+    if (result.ok) {
+      setStatusMessage(result.message);
+      setPassword("");
+      setRegistrationDisplayName("");
+      setIsSubmitting(false);
       return;
     }
 
-    setStatusMessage(result.message);
-    setPassword("");
-    setRegistrationDisplayName("");
+    setErrorMessage(result.message);
+    setIsSubmitting(false);
   }
 
   function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
@@ -104,11 +112,13 @@ export default function ProfilePage() {
     setStatusMessage(result.message);
   }
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    setIsSubmitting(true);
+    await logout();
     setPassword("");
     setStatusMessage("Logged out.");
     setErrorMessage("");
+    setIsSubmitting(false);
   }
 
   return (
@@ -117,6 +127,9 @@ export default function ProfilePage() {
         <h2 className="text-2xl mb-4 text-center">Account</h2>
         {!isAuthenticated && routeMessage ? (
           <p className="text-center text-text-muted mb-4">{routeMessage}</p>
+        ) : null}
+        {isAuthLoading ? (
+          <p className="text-center text-text-muted mb-4">Checking your sign-in session...</p>
         ) : null}
         {statusMessage ? <p className="text-center text-success mb-4">{statusMessage}</p> : null}
         {errorMessage ? <p className="text-center text-danger mb-4">{errorMessage}</p> : null}
@@ -129,6 +142,7 @@ export default function ProfilePage() {
                 className="input-field w-full"
                 name="email"
                 onChange={(event) => setEmail(event.target.value)}
+                disabled={isSubmitting || isAuthLoading}
                 placeholder="you@example.com"
                 required
                 type="email"
@@ -141,6 +155,7 @@ export default function ProfilePage() {
                 className="input-field w-full"
                 name="password"
                 onChange={(event) => setPassword(event.target.value)}
+                disabled={isSubmitting || isAuthLoading}
                 placeholder="minimum 8 characters"
                 required
                 type="password"
@@ -153,17 +168,23 @@ export default function ProfilePage() {
                 className="input-field w-full"
                 name="displayName"
                 onChange={(event) => setRegistrationDisplayName(event.target.value)}
+                disabled={isSubmitting || isAuthLoading}
                 placeholder="optional for login"
                 type="text"
                 value={registrationDisplayName}
               />
             </label>
             <div className="flex flex-col gap-3 w-80">
-              <button className="btn-primary w-full py-3 text-lg" type="submit">
+              <button
+                className="btn-primary w-full py-3 text-lg"
+                disabled={isSubmitting || isAuthLoading}
+                type="submit"
+              >
                 Log In
               </button>
               <button
                 className="btn-ghost w-full py-3 text-lg border border-white/20"
+                disabled={isSubmitting || isAuthLoading}
                 onClick={handleCreateAccount}
                 type="button"
               >
@@ -171,8 +192,8 @@ export default function ProfilePage() {
               </button>
             </div>
             <p className="text-text-muted text-sm text-center max-w-sm">
-              Frontend scaffold mode: credentials are stored in local browser storage until backend
-              auth is implemented.
+              Authentication is handled by the backend service and persisted with a secure
+              HTTP-only session cookie.
             </p>
           </form>
         ) : (
@@ -187,17 +208,19 @@ export default function ProfilePage() {
                 className="input-field w-full"
                 name="displayName"
                 onChange={(event) => setProfileDisplayName(event.target.value)}
+                disabled={isSubmitting}
                 required
                 type="text"
                 value={profileDisplayName}
               />
             </label>
             <div className="flex flex-col gap-3 w-80">
-              <button className="btn-primary w-full py-3 text-lg" type="submit">
+              <button className="btn-primary w-full py-3 text-lg" disabled={isSubmitting} type="submit">
                 Save Profile
               </button>
               <button
                 className="btn-ghost w-full py-3 text-lg border border-white/20"
+                disabled={isSubmitting}
                 onClick={handleLogout}
                 type="button"
               >

@@ -19,7 +19,7 @@ type RouteMessageState = {
 export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { setGameSession } = useGame();
   useNoScroll();
 
@@ -48,6 +48,11 @@ export default function HomePage() {
   }
 
   function requireAuthenticatedSession(): UserRecord | null {
+    if (isAuthLoading) {
+      setInfoMessage("Checking sign-in session. Please try again in a moment.");
+      return null;
+    }
+
     if (isAuthenticated && user) {
       return user;
     }
@@ -170,7 +175,9 @@ export default function HomePage() {
     <AppLayout header={<SiteHeader subtitle />}>
       <div className="flex flex-col items-center gap-2">
         <p className="text-text-muted text-center">
-          {isAuthenticated && user
+          {isAuthLoading
+            ? "Checking sign-in status..."
+            : isAuthenticated && user
             ? `Signed in as ${user.displayName} (${user.email})`
             : "You are not logged in. Join/Create will redirect you to Profile."}
         </p>
