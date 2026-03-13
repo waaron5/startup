@@ -1,7 +1,6 @@
 # The Quisling
 
 This application is a group heist game. Players can sign up, start or join rooms, and save or reference their profile info. 
-
 ## Specification Deliverable
 
 ### Elevator pitch
@@ -152,14 +151,15 @@ For this deliverable I used JavaScript and React so that the application complet
 
 ## Service deliverable
 
-For this deliverable I added backend endpoints that receives votes and returns the voting totals.
+For this deliverable I implemented a verified Node/Express auth service and integrated it with the frontend.
 
-- [x] **Node.js/Express HTTP service** - done!
-- [x] **Static middleware for frontend** - done!
-- [ ] **Calls to third party endpoints** - Not yet.
-- [x] **Backend service endpoints** - Placeholders for login that stores the current user on the server. Endpoints for voting.
-- [x] **Frontend calls service endpoints** - I did this using the fetch function.
-- [ ] **Supports registration, login, logout, and restricted endpoint** - Login only exists on the frontend.
+- [x] **Node.js/Express HTTP service** - `service/index.js` provides the backend service.
+- [x] **Static middleware for frontend** - Express serves `dist` and supports SPA route fallback.
+- [x] **Calls to third party endpoints** - Frontend `HomePage` calls Advice Slip API for mission intel.
+- [x] **Backend service endpoints** - Auth and restricted endpoints are implemented under `/api`.
+- [x] **Frontend calls service endpoints** - `AuthContext` uses `fetch` to call `/api/auth/*` and `/api/auth/me`.
+- [x] **Supports registration, login, logout, and restricted endpoint** - All four behaviors are implemented and smoke-tested.
+- [x] **Use bcrypt to hash passwords** - Registration hashes via bcrypt; login verifies with bcrypt compare.
 
 ## DB/Login deliverable
 
