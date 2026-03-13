@@ -309,6 +309,33 @@ app.get("/api/protected", requireAuth, (req, res) => {
   });
 });
 
+app.use((error, _req, res, next) => {
+  if (!error) {
+    next();
+    return;
+  }
+
+  const isInvalidJson =
+    error instanceof SyntaxError &&
+    Object.prototype.hasOwnProperty.call(error, "status") &&
+    error.status === 400 &&
+    Object.prototype.hasOwnProperty.call(error, "body");
+
+  if (isInvalidJson) {
+    res.status(400).json({
+      ok: false,
+      message: "Request body must be valid JSON.",
+    });
+    return;
+  }
+
+  console.error("Unhandled service error:", error);
+  res.status(500).json({
+    ok: false,
+    message: "Internal server error.",
+  });
+});
+
 app.use(express.static(staticDir, { index: false }));
 
 app.get(/^(?!\/api).*/, (_req, res) => {
