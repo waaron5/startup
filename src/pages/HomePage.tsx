@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useGame } from "../context/GameContext";
 import useNoScroll from "../hooks/useNoScroll";
 import { createGameSession } from "../lib/gameSession";
+import { fetchMissionIntel } from "../lib/missionIntel";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "../lib/roomCode";
 import { readJSON, writeJSON } from "../lib/storage";
 import { createId, nowIso } from "../lib/time";
@@ -29,6 +30,10 @@ export default function HomePage() {
   const [roomCode, setRoomCode] = useState("");
   const [infoMessage, setInfoMessage] = useState(routeMessage);
   const [errorMessage, setErrorMessage] = useState("");
+  const [missionIntel, setMissionIntel] = useState("");
+  const [intelError, setIntelError] = useState("");
+  const [isIntelLoading, setIsIntelLoading] = useState(true);
+  const [intelRequestId, setIntelRequestId] = useState(0);
 
   useEffect(() => {
     if (user?.displayName) {
@@ -41,6 +46,42 @@ export default function HomePage() {
       setInfoMessage(routeMessage);
     }
   }, [routeMessage]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadMissionIntel() {
+      setIsIntelLoading(true);
+      setIntelError("");
+
+      try {
+        const intel = await fetchMissionIntel();
+
+        if (!isActive) {
+          return;
+        }
+
+        setMissionIntel(intel);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setMissionIntel("");
+        setIntelError("Unable to load mission intel right now.");
+      } finally {
+        if (isActive) {
+          setIsIntelLoading(false);
+        }
+      }
+    }
+
+    loadMissionIntel();
+
+    return () => {
+      isActive = false;
+    };
+  }, [intelRequestId]);
 
   function clearMessages() {
     setInfoMessage("");
@@ -183,6 +224,20 @@ export default function HomePage() {
         </p>
         {infoMessage ? <p className="text-success text-center">{infoMessage}</p> : null}
         {errorMessage ? <p className="text-danger text-center">{errorMessage}</p> : null}
+        <div className="w-full max-w-xl text-center mt-2">
+          <p className="text-text-muted text-xs uppercase tracking-wide">Mission Intel</p>
+          <p className="text-text-muted text-xs">Source: Advice Slip API (third-party)</p>
+          {isIntelLoading ? <p className="text-text-muted mt-1">Loading intel...</p> : null}
+          {!isIntelLoading && intelError ? <p className="text-danger mt-1">{intelError}</p> : null}
+          {!isIntelLoading && !intelError ? <p className="text-text mt-1">{missionIntel}</p> : null}
+          <button
+            className="btn-ghost mt-2 border border-white/20"
+            onClick={() => setIntelRequestId((currentId) => currentId + 1)}
+            type="button"
+          >
+            Refresh Intel
+          </button>
+        </div>
       </div>
 
       <form className="flex flex-col mt-8 items-center gap-2" onSubmit={handleJoinRoom}>
