@@ -2,10 +2,12 @@
   "name": "the-quisling",
   "version": "1.0.0",
   "description": "This application is a group heist game. Players can sign up, start or join rooms, and save or reference their profile info.",
-  "main": "index.js",
+  "main": "service/index.js",
   "scripts": {
     "dev": "vite",
+    "dev:service": "node --watch service/index.js",
     "build": "vite build",
+    "start": "node service/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"vite.config.ts\" && echo \"Lint passed\"",
     "lint:fix": "npm run lint -- --fix",
@@ -39,6 +41,9 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
     "mongodb": "^7.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
