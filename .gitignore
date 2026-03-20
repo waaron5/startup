@@ -4,3 +4,4 @@ docs/.DS_Store
 dbConfig.json
 db.js
 plan.md
+deployFiles.sh
