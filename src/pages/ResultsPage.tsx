@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader";
 import AppLayout from "../components/AppLayout";
@@ -6,6 +6,7 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
 import { useGame } from "../context/GameContext";
 import { createGameSession } from "../lib/gameSession";
+import { fetchResultsFromService } from "../lib/api";
 import { readJSON, writeJSON } from "../lib/storage";
 import { createId, nowIso } from "../lib/time";
 import type { GameLobby, GameResult } from "../types/domain";
@@ -17,9 +18,41 @@ export default function ResultsPage() {
   const { setGameSession } = useGame();
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [remoteResults, setRemoteResults] = useState<GameResult[] | null>(null);
 
   const selectedResultId = searchParams.get("resultId");
-  const savedResults = readJSON<GameResult[]>(STORAGE_KEYS.results, []);
+  const localResults = readJSON<GameResult[]>(STORAGE_KEYS.results, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadResults() {
+      try {
+        const response = await fetchResultsFromService();
+
+        if (!isActive) {
+          return;
+        }
+
+        setRemoteResults(response.results);
+        writeJSON(STORAGE_KEYS.results, response.results);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setRemoteResults(null);
+      }
+    }
+
+    void loadResults();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const savedResults = remoteResults ?? localResults;
 
   const userResults = useMemo(
     () =>

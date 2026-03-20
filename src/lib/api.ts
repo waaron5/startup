@@ -1,3 +1,5 @@
+import type { GameResult } from "../types/domain";
+
 export class ApiRequestError extends Error {
   status: number;
   payload: unknown;
@@ -29,6 +31,17 @@ export type ServiceAuthResponse = {
 type ServiceMessageResponse = {
   ok: boolean;
   message: string;
+};
+
+type ServiceResultsResponse = {
+  ok: true;
+  results: GameResult[];
+};
+
+type ServiceResultResponse = {
+  ok: true;
+  message?: string;
+  result: GameResult;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -112,4 +125,19 @@ export function logoutFromService() {
 
 export function fetchCurrentUser() {
   return requestJson<ServiceAuthResponse>("/api/auth/me");
+}
+
+export function fetchResultsFromService() {
+  return requestJson<ServiceResultsResponse>("/api/results");
+}
+
+export function fetchResultByIdFromService(resultId: string) {
+  return requestJson<ServiceResultResponse>(`/api/results/${encodeURIComponent(resultId)}`);
+}
+
+export function saveResultToService(result: GameResult) {
+  return requestJson<ServiceResultResponse>("/api/results", {
+    method: "POST",
+    body: JSON.stringify(result),
+  });
 }

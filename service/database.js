@@ -5,11 +5,13 @@ const { MongoClient } = require("mongodb");
 const defaultDbName = process.env.MONGODB_DB_NAME || "the_quisling";
 const usersCollectionName = process.env.MONGODB_USERS_COLLECTION || "users";
 const sessionsCollectionName = process.env.MONGODB_SESSIONS_COLLECTION || "sessions";
+const resultsCollectionName = process.env.MONGODB_RESULTS_COLLECTION || "results";
 
 let client;
 let db;
 let usersCollection;
 let sessionsCollection;
+let resultsCollection;
 
 function escapeMongoUriPart(value) {
   return encodeURIComponent(String(value));
@@ -53,7 +55,7 @@ function getConnectionString() {
 }
 
 async function initializeDatabase() {
-  if (db && usersCollection && sessionsCollection) {
+  if (db && usersCollection && sessionsCollection && resultsCollection) {
     return;
   }
 
@@ -65,21 +67,24 @@ async function initializeDatabase() {
   db = client.db(defaultDbName);
   usersCollection = db.collection(usersCollectionName);
   sessionsCollection = db.collection(sessionsCollectionName);
+  resultsCollection = db.collection(resultsCollectionName);
 
   await Promise.all([
     usersCollection.createIndex({ id: 1 }, { unique: true }),
     usersCollection.createIndex({ email: 1 }, { unique: true }),
     sessionsCollection.createIndex({ token: 1 }, { unique: true }),
     sessionsCollection.createIndex({ userId: 1 }),
+    resultsCollection.createIndex({ id: 1 }, { unique: true }),
+    resultsCollection.createIndex({ userId: 1, completedAt: -1 }),
   ]);
 }
 
 function ensureCollections() {
-  if (!usersCollection || !sessionsCollection) {
+  if (!usersCollection || !sessionsCollection || !resultsCollection) {
     throw new Error("Database is not initialized. Call initializeDatabase() first.");
   }
 
-  return { usersCollection, sessionsCollection };
+  return { usersCollection, sessionsCollection, resultsCollection };
 }
 
 async function createUser(user) {
@@ -114,6 +119,35 @@ async function deleteSessionByToken(token) {
   await collections.sessionsCollection.deleteOne({ token });
 }
 
+async function upsertResult(result) {
+  const collections = ensureCollections();
+
+  await collections.resultsCollection.updateOne(
+    { id: result.id },
+    {
+      $set: result,
+    },
+    { upsert: true }
+  );
+
+  return result;
+}
+
+async function getResultsByUserId(userId) {
+  const collections = ensureCollections();
+
+  return collections.resultsCollection
+    .find({ userId })
+    .sort({ completedAt: -1 })
+    .toArray();
+}
+
+async function getResultByIdForUser(resultId, userId) {
+  const collections = ensureCollections();
+
+  return collections.resultsCollection.findOne({ id: resultId, userId });
+}
+
 module.exports = {
   initializeDatabase,
   createUser,
@@ -122,4 +156,7 @@ module.exports = {
   createSession,
   findSessionByToken,
   deleteSessionByToken,
+  upsertResult,
+  getResultsByUserId,
+  getResultByIdForUser,
 };

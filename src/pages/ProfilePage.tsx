@@ -4,6 +4,7 @@ import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
+import { fetchResultsFromService } from "../lib/api";
 import { readJSON } from "../lib/storage";
 import type { GameResult } from "../types/domain";
 
@@ -24,6 +25,18 @@ export default function ProfilePage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [remoteResults, setRemoteResults] = useState<GameResult[] | null>(null);
+
+  const savedResults = remoteResults ?? readJSON<GameResult[]>(STORAGE_KEYS.results, []);
+
+  const userResults = user
+    ? savedResults
+        .filter((result) => result.userId === user.id)
+        .sort(
+          (resultA, resultB) =>
+            new Date(resultB.completedAt).getTime() - new Date(resultA.completedAt).getTime()
+        )
+    : [];
 
   useEffect(() => {
     if (!user) {
@@ -34,22 +47,68 @@ export default function ProfilePage() {
     setProfileDisplayName(user.displayName);
   }, [user]);
 
-  const stats = user?.stats ?? {
-    gamesPlayed: 0,
-    wins: 0,
-    losses: 0,
-    winRate: 0,
-    totalScore: 0,
-    bestScore: 0,
-  };
+  const stats = (() => {
+    if (!userResults.length) {
+      return user?.stats ?? {
+        gamesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        winRate: 0,
+        totalScore: 0,
+        bestScore: 0,
+      };
+    }
 
-  const savedResults = readJSON<GameResult[]>(STORAGE_KEYS.results, []);
-  const recentResults = user
-    ? user.history
-        .map((matchId) => savedResults.find((result) => result.id === matchId))
-        .filter((result): result is GameResult => Boolean(result))
-        .slice(0, 5)
-    : [];
+    const gamesPlayed = userResults.length;
+    const wins = userResults.filter((result) => result.outcome === "win").length;
+    const losses = gamesPlayed - wins;
+    const totalScore = userResults.reduce((sum, result) => sum + result.score, 0);
+    const bestScore = userResults.reduce((best, result) => Math.max(best, result.score), 0);
+
+    return {
+      gamesPlayed,
+      wins,
+      losses,
+      winRate: gamesPlayed ? Math.round((wins / gamesPlayed) * 100) : 0,
+      totalScore,
+      bestScore,
+    };
+  })();
+
+  const recentResults = userResults.slice(0, 5);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadResults() {
+      if (!isAuthenticated) {
+        setRemoteResults(null);
+        return;
+      }
+
+      try {
+        const response = await fetchResultsFromService();
+
+        if (!isActive) {
+          return;
+        }
+
+        setRemoteResults(response.results);
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setRemoteResults(null);
+      }
+    }
+
+    void loadResults();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isAuthenticated]);
 
   function clearMessages() {
     setStatusMessage("");

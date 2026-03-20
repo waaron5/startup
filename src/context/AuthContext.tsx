@@ -10,9 +10,11 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import {
   ApiRequestError,
   fetchCurrentUser,
+  fetchResultsFromService,
   loginWithService,
   logoutFromService,
   registerWithService,
+  saveResultToService,
   type ServiceUser,
 } from "../lib/api";
 import { readJSON, updateJSON, writeJSON } from "../lib/storage";
@@ -333,6 +335,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   function recordGameResult(result: GameResult): void {
+    void saveResultToService(result).catch(() => {
+      // Local persistence remains as a fallback when the network is unavailable.
+    });
+
     updateJSON<GameResult[]>(STORAGE_KEYS.results, [], (currentResults) => {
       if (currentResults.some((existingResult) => existingResult.id === result.id)) {
         return currentResults;
@@ -366,6 +372,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         };
       })
     );
+
+    void fetchResultsFromService().then((response) => {
+      writeJSON(STORAGE_KEYS.results, response.results);
+    }).catch(() => {
+      // Ignore sync errors and keep local state.
+    });
   }
 
   const value: AuthContextValue = {

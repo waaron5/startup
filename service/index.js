@@ -47,6 +47,65 @@ function toPublicUser(user) {
   };
 }
 
+function toPublicResult(result) {
+  return {
+    id: result.id,
+    gameId: result.gameId,
+    userId: result.userId,
+    roomCode: result.roomCode,
+    outcome: result.outcome,
+    score: result.score,
+    summary: {
+      buildingsHit: Array.isArray(result.summary?.buildingsHit) ? result.summary.buildingsHit : [],
+      turnsPlayed: Number(result.summary?.turnsPlayed) || 0,
+      timeRemaining: Number(result.summary?.timeRemaining) || 0,
+    },
+    completedAt: result.completedAt,
+  };
+}
+
+function parseResultInput(payload, userId) {
+  const id = String(payload?.id || "").trim();
+  const gameId = String(payload?.gameId || "").trim();
+  const roomCode = String(payload?.roomCode || "").trim().toUpperCase();
+  const outcome = payload?.outcome;
+  const score = Number(payload?.score);
+  const completedAt = String(payload?.completedAt || "").trim();
+  const summary = payload?.summary || {};
+  const buildingsHit = Array.isArray(summary.buildingsHit)
+    ? summary.buildingsHit.map((entry) => String(entry))
+    : [];
+  const turnsPlayed = Number(summary.turnsPlayed);
+  const timeRemaining = Number(summary.timeRemaining);
+
+  if (!id || !gameId || !roomCode || !completedAt) {
+    return null;
+  }
+
+  if (!(outcome === "win" || outcome === "loss")) {
+    return null;
+  }
+
+  if (!Number.isFinite(score) || !Number.isFinite(turnsPlayed) || !Number.isFinite(timeRemaining)) {
+    return null;
+  }
+
+  return {
+    id,
+    gameId,
+    userId,
+    roomCode,
+    outcome,
+    score,
+    summary: {
+      buildingsHit,
+      turnsPlayed,
+      timeRemaining,
+    },
+    completedAt,
+  };
+}
+
 async function getUserFromRequest(req) {
   const token = req.cookies?.[authCookieName];
 
@@ -290,6 +349,77 @@ app.get("/api/protected", requireAuth, (req, res) => {
       email: user.email,
     },
   });
+});
+
+app.get("/api/results", requireAuth, async (req, res) => {
+  try {
+    const { user } = req.auth;
+    const results = await database.getResultsByUserId(user.id);
+
+    res.status(200).json({
+      ok: true,
+      results: results.map(toPublicResult),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to fetch results.",
+    });
+  }
+});
+
+app.get("/api/results/:resultId", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+
+  try {
+    const result = await database.getResultByIdForUser(req.params.resultId, user.id);
+
+    if (!result) {
+      res.status(404).json({
+        ok: false,
+        message: "Result not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      result: toPublicResult(result),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to fetch result.",
+    });
+  }
+});
+
+app.post("/api/results", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const parsedResult = parseResultInput(req.body, user.id);
+
+  if (!parsedResult) {
+    res.status(400).json({
+      ok: false,
+      message: "Invalid result payload.",
+    });
+    return;
+  }
+
+  try {
+    const savedResult = await database.upsertResult(parsedResult);
+
+    res.status(201).json({
+      ok: true,
+      message: "Result saved.",
+      result: toPublicResult(savedResult),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to save result.",
+    });
+  }
 });
 
 app.use((error, _req, res, next) => {
