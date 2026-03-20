@@ -15,6 +15,7 @@ import {
   logoutFromService,
   registerWithService,
   saveResultToService,
+  updateProfileInService,
   type ServiceUser,
 } from "../lib/api";
 import { readJSON, updateJSON, writeJSON } from "../lib/storage";
@@ -49,7 +50,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<AuthResult>;
   register: (input: RegisterInput) => Promise<AuthResult>;
   logout: () => Promise<void>;
-  updateProfile: (input: ProfileUpdateInput) => AuthResult;
+  updateProfile: (input: ProfileUpdateInput) => Promise<AuthResult>;
   recordGameResult: (result: GameResult) => void;
 };
 
@@ -94,9 +95,9 @@ function createUserRecordFromService(
     password: existingUser?.password ?? "",
     displayName: normalizeDisplayName(serviceUser.displayName, serviceUser.email),
     createdAt: serviceUser.createdAt,
-    stats: existingUser?.stats ?? createDefaultStats(),
-    friends: existingUser?.friends ?? [],
-    history: existingUser?.history ?? [],
+    stats: serviceUser.stats ?? existingUser?.stats ?? createDefaultStats(),
+    friends: serviceUser.friends ?? existingUser?.friends ?? [],
+    history: serviceUser.history ?? existingUser?.history ?? [],
   };
 }
 
@@ -298,7 +299,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }
 
-  function updateProfile(input: ProfileUpdateInput): AuthResult {
+  async function updateProfile(input: ProfileUpdateInput): Promise<AuthResult> {
     if (!user) {
       return { ok: false, message: "You must be logged in to update your profile." };
     }
@@ -309,35 +310,45 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return { ok: false, message: "Display name cannot be empty." };
     }
 
-    const updatedUser: UserRecord = {
-      ...user,
-      displayName: nextDisplayName,
-    };
+    try {
+      const response = await updateProfileInService({
+        displayName: nextDisplayName,
+      });
 
-    setUsers((currentUsers) =>
-      currentUsers.map((candidate) => (candidate.id === updatedUser.id ? updatedUser : candidate))
-    );
+      const syncedUser = syncUserFromService(response.user);
 
-    setSession((currentSession) =>
-      currentSession
-        ? {
-            ...currentSession,
-            displayName: nextDisplayName,
-          }
-        : null
-    );
+      setSession((currentSession) =>
+        currentSession
+          ? {
+              ...currentSession,
+              displayName: syncedUser.displayName,
+            }
+          : null
+      );
 
-    return {
-      ok: true,
-      message: "Profile updated.",
-      user: updatedUser,
-    };
+      return {
+        ok: true,
+        message: response.message ?? "Profile updated.",
+        user: syncedUser,
+      };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        message: toAuthErrorMessage(error, "Unable to update profile."),
+      };
+    }
   }
 
   function recordGameResult(result: GameResult): void {
-    void saveResultToService(result).catch(() => {
-      // Local persistence remains as a fallback when the network is unavailable.
-    });
+    void saveResultToService(result)
+      .then(() => fetchCurrentUser())
+      .then((response) => {
+        const syncedUser = syncUserFromService(response.user);
+        setSessionFromUser(syncedUser, response.session.loggedInAt);
+      })
+      .catch(() => {
+        // Local persistence remains as a fallback when the network is unavailable.
+      });
 
     updateJSON<GameResult[]>(STORAGE_KEYS.results, [], (currentResults) => {
       if (currentResults.some((existingResult) => existingResult.id === result.id)) {
@@ -346,32 +357,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       return [result, ...currentResults];
     });
-
-    setUsers((currentUsers) =>
-      currentUsers.map((candidate) => {
-        if (candidate.id !== result.userId) {
-          return candidate;
-        }
-
-        const gamesPlayed = candidate.stats.gamesPlayed + 1;
-        const wins = candidate.stats.wins + (result.outcome === "win" ? 1 : 0);
-        const losses = candidate.stats.losses + (result.outcome === "loss" ? 1 : 0);
-        const winRate = gamesPlayed ? Math.round((wins / gamesPlayed) * 100) : 0;
-
-        return {
-          ...candidate,
-          stats: {
-            gamesPlayed,
-            wins,
-            losses,
-            winRate,
-            totalScore: candidate.stats.totalScore + result.score,
-            bestScore: Math.max(candidate.stats.bestScore, result.score),
-          },
-          history: [result.id, ...candidate.history],
-        };
-      })
-    );
 
     void fetchResultsFromService().then((response) => {
       writeJSON(STORAGE_KEYS.results, response.results);

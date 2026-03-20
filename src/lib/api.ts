@@ -1,5 +1,6 @@
 import type { GameResult } from "../types/domain";
 import type { GameLobby } from "../types/domain";
+import type { UserStats } from "../types/domain";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -18,6 +19,9 @@ export type ServiceUser = {
   email: string;
   displayName: string;
   createdAt: string;
+  stats: UserStats;
+  friends: string[];
+  history: string[];
 };
 
 export type ServiceAuthResponse = {
@@ -43,6 +47,12 @@ type ServiceResultResponse = {
   ok: true;
   message?: string;
   result: GameResult;
+};
+
+type ServiceProfileResponse = {
+  ok: true;
+  message?: string;
+  user: ServiceUser;
 };
 
 type ServiceLobbyResponse = {
@@ -181,5 +191,12 @@ export function updateLobbyStatusInService(roomCode: string, status: GameLobby["
 export function reopenLobbyInService(roomCode: string) {
   return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/reopen`, {
     method: "POST",
+  });
+}
+
+export function updateProfileInService(input: { displayName: string }) {
+  return requestJson<ServiceProfileResponse>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }

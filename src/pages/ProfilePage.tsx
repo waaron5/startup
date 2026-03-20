@@ -155,20 +155,23 @@ export default function ProfilePage() {
     setIsSubmitting(false);
   }
 
-  function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
+    setIsSubmitting(true);
 
-    const result = updateProfile({
+    const result = await updateProfile({
       displayName: profileDisplayName,
     });
 
     if (!result.ok) {
       setErrorMessage(result.message);
+      setIsSubmitting(false);
       return;
     }
 
     setStatusMessage(result.message);
+    setIsSubmitting(false);
   }
 
   async function handleLogout() {

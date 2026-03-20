@@ -39,11 +39,23 @@ function normalizeDisplayName(displayName, email) {
 }
 
 function toPublicUser(user) {
+  const stats = user.stats && typeof user.stats === "object" ? user.stats : {};
+
   return {
     id: user.id,
     email: user.email,
     displayName: user.displayName,
     createdAt: user.createdAt,
+    stats: {
+      gamesPlayed: Number(stats.gamesPlayed || 0),
+      wins: Number(stats.wins || 0),
+      losses: Number(stats.losses || 0),
+      winRate: Number(stats.winRate || 0),
+      totalScore: Number(stats.totalScore || 0),
+      bestScore: Number(stats.bestScore || 0),
+    },
+    friends: Array.isArray(user.friends) ? user.friends : [],
+    history: Array.isArray(user.history) ? user.history : [],
   };
 }
 
@@ -234,6 +246,16 @@ app.post("/api/auth/register", async (req, res) => {
       passwordHash,
       displayName: normalizeDisplayName(req.body?.displayName, email),
       createdAt: nowIso(),
+      stats: {
+        gamesPlayed: 0,
+        wins: 0,
+        losses: 0,
+        winRate: 0,
+        totalScore: 0,
+        bestScore: 0,
+      },
+      friends: [],
+      history: [],
     };
 
     await database.createUser(user);
@@ -376,6 +398,43 @@ app.get("/api/protected", requireAuth, (req, res) => {
   });
 });
 
+app.patch("/api/profile", requireAuth, async (req, res) => {
+  const nextDisplayName = String(req.body?.displayName || "").trim();
+
+  if (!nextDisplayName) {
+    res.status(400).json({
+      ok: false,
+      message: "Display name cannot be empty.",
+    });
+    return;
+  }
+
+  try {
+    const updatedUser = await database.updateUserById(req.auth.user.id, {
+      displayName: nextDisplayName,
+    });
+
+    if (!updatedUser) {
+      res.status(404).json({
+        ok: false,
+        message: "User not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      message: "Profile updated.",
+      user: toPublicUser(updatedUser),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to update profile.",
+    });
+  }
+});
+
 app.get("/api/results", requireAuth, async (req, res) => {
   try {
     const { user } = req.auth;
@@ -432,7 +491,12 @@ app.post("/api/results", requireAuth, async (req, res) => {
   }
 
   try {
+    const existingResult = await database.getResultByIdForUser(parsedResult.id, user.id);
     const savedResult = await database.upsertResult(parsedResult);
+
+    if (!existingResult) {
+      await database.applyResultToUserProfile(user.id, savedResult);
+    }
 
     res.status(201).json({
       ok: true,

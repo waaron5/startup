@@ -109,6 +109,19 @@ async function findUserById(id) {
   return collections.usersCollection.findOne({ id });
 }
 
+async function updateUserById(userId, updates) {
+  const collections = ensureCollections();
+
+  await collections.usersCollection.updateOne(
+    { id: userId },
+    {
+      $set: updates,
+    }
+  );
+
+  return collections.usersCollection.findOne({ id: userId });
+}
+
 async function createSession(session) {
   const collections = ensureCollections();
   await collections.sessionsCollection.insertOne(session);
@@ -152,6 +165,66 @@ async function getResultByIdForUser(resultId, userId) {
   const collections = ensureCollections();
 
   return collections.resultsCollection.findOne({ id: resultId, userId });
+}
+
+function createDefaultStats() {
+  return {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    winRate: 0,
+    totalScore: 0,
+    bestScore: 0,
+  };
+}
+
+async function applyResultToUserProfile(userId, result) {
+  const collections = ensureCollections();
+  const user = await collections.usersCollection.findOne({ id: userId });
+
+  if (!user) {
+    return null;
+  }
+
+  const history = Array.isArray(user.history) ? user.history : [];
+
+  if (history.includes(result.id)) {
+    return user;
+  }
+
+  const currentStats = user.stats && typeof user.stats === "object" ? user.stats : createDefaultStats();
+  const gamesPlayed = Number(currentStats.gamesPlayed || 0) + 1;
+  const wins = Number(currentStats.wins || 0) + (result.outcome === "win" ? 1 : 0);
+  const losses = Number(currentStats.losses || 0) + (result.outcome === "loss" ? 1 : 0);
+  const totalScore = Number(currentStats.totalScore || 0) + Number(result.score || 0);
+  const bestScore = Math.max(Number(currentStats.bestScore || 0), Number(result.score || 0));
+  const winRate = gamesPlayed ? Math.round((wins / gamesPlayed) * 100) : 0;
+
+  const nextStats = {
+    gamesPlayed,
+    wins,
+    losses,
+    winRate,
+    totalScore,
+    bestScore,
+  };
+
+  await collections.usersCollection.updateOne(
+    { id: userId },
+    {
+      $set: {
+        stats: nextStats,
+      },
+      $push: {
+        history: {
+          $each: [result.id],
+          $position: 0,
+        },
+      },
+    }
+  );
+
+  return collections.usersCollection.findOne({ id: userId });
 }
 
 async function getLobbyByRoomCode(roomCode) {
@@ -261,12 +334,14 @@ module.exports = {
   createUser,
   findUserByEmail,
   findUserById,
+  updateUserById,
   createSession,
   findSessionByToken,
   deleteSessionByToken,
   upsertResult,
   getResultsByUserId,
   getResultByIdForUser,
+  applyResultToUserProfile,
   getLobbyByRoomCode,
   createLobby,
   joinLobbyByRoomCode,
