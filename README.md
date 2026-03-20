@@ -168,6 +168,31 @@ For this deliverable I associate the votes with the logged in user. I stored the
 - [x] **Stores data in MongoDB** - done!
 - [x] **Use MongoDB to store credentials** - Stores users, votes, and profile info.
 
+### DB/Login implementation notes (what was modified)
+
+- Added MongoDB-backed persistence in [service/database.js](service/database.js) for users, sessions, results, and lobbies.
+- Refactored [service/index.js](service/index.js) auth/session flow to read and write credentials/sessions from MongoDB.
+- Added authenticated profile endpoint (`PATCH /api/profile`) in [service/index.js](service/index.js) and persisted display name updates.
+- Added authenticated results endpoints in [service/index.js](service/index.js):
+  - `GET /api/results`
+  - `GET /api/results/:resultId`
+  - `POST /api/results`
+- Added authenticated lobby endpoints in [service/index.js](service/index.js):
+  - `GET /api/lobbies/:roomCode`
+  - `POST /api/lobbies`
+  - `POST /api/lobbies/:roomCode/join`
+  - `POST /api/lobbies/:roomCode/leave`
+  - `POST /api/lobbies/:roomCode/status`
+  - `POST /api/lobbies/:roomCode/reopen`
+- Updated frontend API client in [src/lib/api.ts](src/lib/api.ts) to call backend MongoDB-backed auth/profile/results/lobby endpoints.
+- Updated auth/profile/results/lobby UI flows to use service APIs with local fallback where needed:
+  - [src/context/AuthContext.tsx](src/context/AuthContext.tsx)
+  - [src/pages/HomePage.tsx](src/pages/HomePage.tsx)
+  - [src/pages/GamePage.tsx](src/pages/GamePage.tsx)
+  - [src/pages/ResultsPage.tsx](src/pages/ResultsPage.tsx)
+  - [src/pages/ProfilePage.tsx](src/pages/ProfilePage.tsx)
+- Updated deployment script [deployFiles.sh](deployFiles.sh) to deploy both frontend and backend and restart PM2.
+
 ## WebSocket deliverable
 
 For this deliverable I used webSocket to update the votes on the frontend in realtime.
