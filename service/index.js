@@ -106,6 +106,31 @@ function parseResultInput(payload, userId) {
   };
 }
 
+function normalizeRoomCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function toPublicLobby(lobby) {
+  return {
+    id: lobby.id,
+    roomCode: lobby.roomCode,
+    createdAt: lobby.createdAt,
+    updatedAt: lobby.updatedAt,
+    hostUserId: lobby.hostUserId,
+    players: Array.isArray(lobby.players) ? lobby.players : [],
+    status: lobby.status,
+  };
+}
+
+function parseLobbyStatus(value) {
+  const nextStatus = String(value || "").trim();
+  if (nextStatus === "open" || nextStatus === "in_progress" || nextStatus === "complete") {
+    return nextStatus;
+  }
+
+  return null;
+}
+
 async function getUserFromRequest(req) {
   const token = req.cookies?.[authCookieName];
 
@@ -418,6 +443,231 @@ app.post("/api/results", requireAuth, async (req, res) => {
     res.status(500).json({
       ok: false,
       message: "Failed to save result.",
+    });
+  }
+});
+
+app.get("/api/lobbies/:roomCode", requireAuth, async (req, res) => {
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  try {
+    const lobby = await database.getLobbyByRoomCode(roomCode);
+
+    if (!lobby) {
+      res.status(404).json({
+        ok: false,
+        message: "Lobby not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      lobby: toPublicLobby(lobby),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to fetch lobby.",
+    });
+  }
+});
+
+app.post("/api/lobbies", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.body?.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  try {
+    const existingLobby = await database.getLobbyByRoomCode(roomCode);
+
+    if (existingLobby) {
+      res.status(409).json({
+        ok: false,
+        message: "Room code already exists.",
+      });
+      return;
+    }
+
+    const timestamp = nowIso();
+    const lobby = {
+      id: `lobby_${crypto.randomUUID()}`,
+      roomCode,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      hostUserId: user.id,
+      players: [user.id],
+      status: "open",
+    };
+
+    await database.createLobby(lobby);
+
+    res.status(201).json({
+      ok: true,
+      lobby: toPublicLobby(lobby),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to create lobby.",
+    });
+  }
+});
+
+app.post("/api/lobbies/:roomCode/join", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  try {
+    const lobby = await database.joinLobbyByRoomCode(roomCode, user.id, nowIso());
+
+    if (!lobby) {
+      res.status(404).json({
+        ok: false,
+        message: "Lobby not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      lobby: toPublicLobby(lobby),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to join lobby.",
+    });
+  }
+});
+
+app.post("/api/lobbies/:roomCode/leave", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  try {
+    const lobby = await database.leaveLobbyByRoomCode(roomCode, user.id, nowIso());
+
+    res.status(200).json({
+      ok: true,
+      lobby: lobby ? toPublicLobby(lobby) : null,
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to leave lobby.",
+    });
+  }
+});
+
+app.post("/api/lobbies/:roomCode/status", requireAuth, async (req, res) => {
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+  const status = parseLobbyStatus(req.body?.status);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  if (!status) {
+    res.status(400).json({
+      ok: false,
+      message: "Invalid lobby status.",
+    });
+    return;
+  }
+
+  try {
+    const lobby = await database.setLobbyStatusByRoomCode(roomCode, status, nowIso());
+
+    if (!lobby) {
+      res.status(404).json({
+        ok: false,
+        message: "Lobby not found.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      lobby: toPublicLobby(lobby),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to update lobby status.",
+    });
+  }
+});
+
+app.post("/api/lobbies/:roomCode/reopen", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  try {
+    const timestamp = nowIso();
+    const createdLobby = {
+      id: `lobby_${crypto.randomUUID()}`,
+      roomCode,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      hostUserId: user.id,
+      players: [user.id],
+      status: "open",
+    };
+
+    const lobby = await database.reopenLobbyByRoomCode(roomCode, user.id, createdLobby);
+
+    res.status(200).json({
+      ok: true,
+      lobby: toPublicLobby(lobby),
+    });
+  } catch {
+    res.status(500).json({
+      ok: false,
+      message: "Failed to reopen lobby.",
     });
   }
 });

@@ -7,6 +7,11 @@ import { useAuth } from "../context/AuthContext";
 import { useGame } from "../context/GameContext";
 import useNoScroll from "../hooks/useNoScroll";
 import { createGameSession } from "../lib/gameSession";
+import {
+  createLobbyInService,
+  fetchLobbyByRoomCode,
+  joinLobbyInService,
+} from "../lib/api";
 import { fetchMissionIntel } from "../lib/missionIntel";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "../lib/roomCode";
 import { readJSON, writeJSON } from "../lib/storage";
@@ -107,7 +112,7 @@ export default function HomePage() {
     return null;
   }
 
-  function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
+  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
 
@@ -124,11 +129,18 @@ export default function HomePage() {
       return;
     }
 
-    const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
-    const existingLobby = lobbies.find((candidate) => candidate.roomCode === normalizedCode);
+    let existingLobby: GameLobby | null = null;
+
+    try {
+      const fetched = await fetchLobbyByRoomCode(normalizedCode);
+      existingLobby = fetched.lobby;
+    } catch {
+      const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
+      existingLobby = lobbies.find((candidate) => candidate.roomCode === normalizedCode) ?? null;
+    }
 
     if (!existingLobby) {
-      setErrorMessage("Room code not found in local session storage.");
+      setErrorMessage("Room code not found.");
       return;
     }
 
@@ -139,19 +151,34 @@ export default function HomePage() {
       return;
     }
 
-    const updatedLobby: GameLobby = {
-      ...existingLobby,
-      updatedAt: nowIso(),
-      players: existingLobby.players.includes(currentUser.id)
-        ? existingLobby.players
-        : [...existingLobby.players, currentUser.id],
-    };
+    try {
+      const joined = await joinLobbyInService(normalizedCode);
 
-    const nextLobbies = lobbies.map((candidate) =>
-      candidate.id === updatedLobby.id ? updatedLobby : candidate
-    );
+      if (joined.lobby) {
+        const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
+        const nextLobbies = lobbies.some((candidate) => candidate.id === joined.lobby?.id)
+          ? lobbies.map((candidate) => (candidate.id === joined.lobby?.id ? joined.lobby : candidate))
+          : [...lobbies, joined.lobby];
 
-    writeJSON(STORAGE_KEYS.games, nextLobbies);
+        writeJSON(STORAGE_KEYS.games, nextLobbies);
+      }
+    } catch {
+      const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
+      const updatedLobby: GameLobby = {
+        ...existingLobby,
+        updatedAt: nowIso(),
+        players: existingLobby.players.includes(currentUser.id)
+          ? existingLobby.players
+          : [...existingLobby.players, currentUser.id],
+      };
+
+      const nextLobbies = lobbies.map((candidate) =>
+        candidate.id === updatedLobby.id ? updatedLobby : candidate
+      );
+
+      writeJSON(STORAGE_KEYS.games, nextLobbies);
+    }
+
     setGameSession(
       createGameSession({
         roomCode: normalizedCode,
@@ -162,7 +189,7 @@ export default function HomePage() {
     navigate("/game");
   }
 
-  function handleCreateRoom() {
+  async function handleCreateRoom() {
     clearMessages();
 
     const currentUser = requireAuthenticatedSession();
@@ -189,18 +216,27 @@ export default function HomePage() {
       return;
     }
 
-    const timestamp = nowIso();
-    const newLobby: GameLobby = {
-      id: createId("lobby"),
-      roomCode: newRoomCode,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      hostUserId: currentUser.id,
-      players: [currentUser.id],
-      status: "open",
-    };
+    try {
+      const created = await createLobbyInService(newRoomCode);
 
-    writeJSON(STORAGE_KEYS.games, [...lobbies, newLobby]);
+      if (created.lobby) {
+        writeJSON(STORAGE_KEYS.games, [...lobbies, created.lobby]);
+      }
+    } catch {
+      const timestamp = nowIso();
+      const newLobby: GameLobby = {
+        id: createId("lobby"),
+        roomCode: newRoomCode,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        hostUserId: currentUser.id,
+        players: [currentUser.id],
+        status: "open",
+      };
+
+      writeJSON(STORAGE_KEYS.games, [...lobbies, newLobby]);
+    }
+
     setGameSession(
       createGameSession({
         roomCode: newRoomCode,

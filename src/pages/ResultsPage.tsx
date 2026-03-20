@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useGame } from "../context/GameContext";
 import { createGameSession } from "../lib/gameSession";
 import { fetchResultsFromService } from "../lib/api";
+import { reopenLobbyInService } from "../lib/api";
 import { readJSON, writeJSON } from "../lib/storage";
 import { createId, nowIso } from "../lib/time";
 import type { GameLobby, GameResult } from "../types/domain";
@@ -79,7 +80,7 @@ export default function ResultsPage() {
     return userResults[0];
   }, [selectedResultId, userResults]);
 
-  function handlePlayAgain() {
+  async function handlePlayAgain() {
     setMessage("");
     setErrorMessage("");
 
@@ -119,7 +120,22 @@ export default function ResultsPage() {
       nextLobbies = [replayLobby, ...lobbies];
     }
 
-    writeJSON(STORAGE_KEYS.games, nextLobbies);
+    try {
+      const response = await reopenLobbyInService(result.roomCode);
+
+      if (response.lobby) {
+        const merged = lobbies.some((lobby) => lobby.id === response.lobby?.id)
+          ? lobbies.map((lobby) => (lobby.id === response.lobby?.id ? response.lobby : lobby))
+          : [response.lobby, ...lobbies];
+
+        writeJSON(STORAGE_KEYS.games, merged);
+      } else {
+        writeJSON(STORAGE_KEYS.games, nextLobbies);
+      }
+    } catch {
+      writeJSON(STORAGE_KEYS.games, nextLobbies);
+    }
+
     setGameSession(
       createGameSession({
         roomCode: result.roomCode,

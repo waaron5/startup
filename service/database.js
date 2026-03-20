@@ -6,12 +6,14 @@ const defaultDbName = process.env.MONGODB_DB_NAME || "the_quisling";
 const usersCollectionName = process.env.MONGODB_USERS_COLLECTION || "users";
 const sessionsCollectionName = process.env.MONGODB_SESSIONS_COLLECTION || "sessions";
 const resultsCollectionName = process.env.MONGODB_RESULTS_COLLECTION || "results";
+const lobbiesCollectionName = process.env.MONGODB_LOBBIES_COLLECTION || "lobbies";
 
 let client;
 let db;
 let usersCollection;
 let sessionsCollection;
 let resultsCollection;
+let lobbiesCollection;
 
 function escapeMongoUriPart(value) {
   return encodeURIComponent(String(value));
@@ -55,7 +57,7 @@ function getConnectionString() {
 }
 
 async function initializeDatabase() {
-  if (db && usersCollection && sessionsCollection && resultsCollection) {
+  if (db && usersCollection && sessionsCollection && resultsCollection && lobbiesCollection) {
     return;
   }
 
@@ -68,6 +70,7 @@ async function initializeDatabase() {
   usersCollection = db.collection(usersCollectionName);
   sessionsCollection = db.collection(sessionsCollectionName);
   resultsCollection = db.collection(resultsCollectionName);
+  lobbiesCollection = db.collection(lobbiesCollectionName);
 
   await Promise.all([
     usersCollection.createIndex({ id: 1 }, { unique: true }),
@@ -76,15 +79,18 @@ async function initializeDatabase() {
     sessionsCollection.createIndex({ userId: 1 }),
     resultsCollection.createIndex({ id: 1 }, { unique: true }),
     resultsCollection.createIndex({ userId: 1, completedAt: -1 }),
+    lobbiesCollection.createIndex({ id: 1 }, { unique: true }),
+    lobbiesCollection.createIndex({ roomCode: 1 }, { unique: true }),
+    lobbiesCollection.createIndex({ players: 1 }),
   ]);
 }
 
 function ensureCollections() {
-  if (!usersCollection || !sessionsCollection || !resultsCollection) {
+  if (!usersCollection || !sessionsCollection || !resultsCollection || !lobbiesCollection) {
     throw new Error("Database is not initialized. Call initializeDatabase() first.");
   }
 
-  return { usersCollection, sessionsCollection, resultsCollection };
+  return { usersCollection, sessionsCollection, resultsCollection, lobbiesCollection };
 }
 
 async function createUser(user) {
@@ -148,6 +154,108 @@ async function getResultByIdForUser(resultId, userId) {
   return collections.resultsCollection.findOne({ id: resultId, userId });
 }
 
+async function getLobbyByRoomCode(roomCode) {
+  const collections = ensureCollections();
+  return collections.lobbiesCollection.findOne({ roomCode });
+}
+
+async function createLobby(lobby) {
+  const collections = ensureCollections();
+  await collections.lobbiesCollection.insertOne(lobby);
+  return lobby;
+}
+
+async function joinLobbyByRoomCode(roomCode, userId, updatedAt) {
+  const collections = ensureCollections();
+
+  const result = await collections.lobbiesCollection.findOneAndUpdate(
+    { roomCode },
+    {
+      $addToSet: { players: userId },
+      $set: { updatedAt },
+    },
+    {
+      returnDocument: "after",
+    }
+  );
+
+  return result;
+}
+
+async function setLobbyStatusByRoomCode(roomCode, status, updatedAt) {
+  const collections = ensureCollections();
+
+  return collections.lobbiesCollection.findOneAndUpdate(
+    { roomCode },
+    {
+      $set: {
+        status,
+        updatedAt,
+      },
+    },
+    {
+      returnDocument: "after",
+    }
+  );
+}
+
+async function reopenLobbyByRoomCode(roomCode, userId, newLobby) {
+  const collections = ensureCollections();
+
+  const existingLobby = await collections.lobbiesCollection.findOne({ roomCode });
+
+  if (!existingLobby) {
+    await collections.lobbiesCollection.insertOne(newLobby);
+    return newLobby;
+  }
+
+  return collections.lobbiesCollection.findOneAndUpdate(
+    { roomCode },
+    {
+      $set: {
+        status: "open",
+        updatedAt: newLobby.updatedAt,
+      },
+      $addToSet: {
+        players: userId,
+      },
+    },
+    {
+      returnDocument: "after",
+    }
+  );
+}
+
+async function leaveLobbyByRoomCode(roomCode, userId, updatedAt) {
+  const collections = ensureCollections();
+
+  const updatedLobby = await collections.lobbiesCollection.findOneAndUpdate(
+    { roomCode },
+    {
+      $pull: {
+        players: userId,
+      },
+      $set: {
+        updatedAt,
+      },
+    },
+    {
+      returnDocument: "after",
+    }
+  );
+
+  if (!updatedLobby) {
+    return null;
+  }
+
+  if (Array.isArray(updatedLobby.players) && updatedLobby.players.length === 0) {
+    await collections.lobbiesCollection.deleteOne({ roomCode });
+    return null;
+  }
+
+  return updatedLobby;
+}
+
 module.exports = {
   initializeDatabase,
   createUser,
@@ -159,4 +267,10 @@ module.exports = {
   upsertResult,
   getResultsByUserId,
   getResultByIdForUser,
+  getLobbyByRoomCode,
+  createLobby,
+  joinLobbyByRoomCode,
+  setLobbyStatusByRoomCode,
+  reopenLobbyByRoomCode,
+  leaveLobbyByRoomCode,
 };

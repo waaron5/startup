@@ -11,6 +11,10 @@ import { useGame } from "../context/GameContext";
 import useNoScroll from "../hooks/useNoScroll";
 import useGameTimer from "../hooks/useGameTimer";
 import {
+  leaveLobbyInService,
+  updateLobbyStatusInService,
+} from "../lib/api";
+import {
   beginActionPhase,
   commitAction,
   computeOutcome,
@@ -131,6 +135,11 @@ export default function GamePage() {
           }
         : lobby
     );
+
+    void updateLobbyStatusInService(gameSession.roomCode, "complete").catch(() => {
+      // Keep local state as a fallback when service update fails.
+    });
+
     writeJSON(STORAGE_KEYS.games, updatedLobbies);
     clearGameSession();
 
@@ -209,6 +218,10 @@ export default function GamePage() {
     if (!confirmed) {
       return;
     }
+
+    void leaveLobbyInService(gameSession.roomCode).catch(() => {
+      // Keep local state fallback when network call fails.
+    });
 
     const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
     const nextLobbies = lobbies

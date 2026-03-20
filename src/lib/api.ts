@@ -1,4 +1,5 @@
 import type { GameResult } from "../types/domain";
+import type { GameLobby } from "../types/domain";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -42,6 +43,11 @@ type ServiceResultResponse = {
   ok: true;
   message?: string;
   result: GameResult;
+};
+
+type ServiceLobbyResponse = {
+  ok: true;
+  lobby: GameLobby | null;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -139,5 +145,41 @@ export function saveResultToService(result: GameResult) {
   return requestJson<ServiceResultResponse>("/api/results", {
     method: "POST",
     body: JSON.stringify(result),
+  });
+}
+
+export function fetchLobbyByRoomCode(roomCode: string) {
+  return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}`);
+}
+
+export function createLobbyInService(roomCode: string) {
+  return requestJson<ServiceLobbyResponse>("/api/lobbies", {
+    method: "POST",
+    body: JSON.stringify({ roomCode }),
+  });
+}
+
+export function joinLobbyInService(roomCode: string) {
+  return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/join`, {
+    method: "POST",
+  });
+}
+
+export function leaveLobbyInService(roomCode: string) {
+  return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/leave`, {
+    method: "POST",
+  });
+}
+
+export function updateLobbyStatusInService(roomCode: string, status: GameLobby["status"]) {
+  return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function reopenLobbyInService(roomCode: string) {
+  return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/reopen`, {
+    method: "POST",
   });
 }
