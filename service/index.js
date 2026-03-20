@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const bcrypt = require("bcrypt");
+const database = require("./database");
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -13,14 +14,6 @@ const authCookieName = "token";
 const passwordMinLength = 8;
 const bcryptSaltRounds = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/**
- * In-memory stores are sufficient for this deliverable phase.
- * These will be replaced with persistent storage in a later phase.
- */
-const usersById = new Map();
-const userIdsByEmail = new Map();
-const sessionsByToken = new Map();
 
 app.disable("x-powered-by");
 app.use(express.json());
@@ -54,23 +47,23 @@ function toPublicUser(user) {
   };
 }
 
-function getUserFromRequest(req) {
+async function getUserFromRequest(req) {
   const token = req.cookies?.[authCookieName];
 
   if (!token) {
     return null;
   }
 
-  const session = sessionsByToken.get(token);
+  const session = await database.findSessionByToken(token);
 
   if (!session) {
     return null;
   }
 
-  const user = usersById.get(session.userId);
+  const user = await database.findUserById(session.userId);
 
   if (!user) {
-    sessionsByToken.delete(token);
+    await database.deleteSessionByToken(token);
     return null;
   }
 
@@ -96,8 +89,8 @@ function clearAuthCookie(res) {
   });
 }
 
-function requireAuth(req, res, next) {
-  const authContext = getUserFromRequest(req);
+async function requireAuth(req, res, next) {
+  const authContext = await getUserFromRequest(req);
 
   if (!authContext) {
     res.status(401).json({
@@ -139,15 +132,17 @@ app.post("/api/auth/register", async (req, res) => {
     return;
   }
 
-  if (userIdsByEmail.has(email)) {
-    res.status(409).json({
-      ok: false,
-      message: "An account with that email already exists.",
-    });
-    return;
-  }
-
   try {
+    const existingUser = await database.findUserByEmail(email);
+
+    if (existingUser) {
+      res.status(409).json({
+        ok: false,
+        message: "An account with that email already exists.",
+      });
+      return;
+    }
+
     const passwordHash = await bcrypt.hash(password, bcryptSaltRounds);
     const user = {
       id: `usr_${crypto.randomUUID()}`,
@@ -157,13 +152,12 @@ app.post("/api/auth/register", async (req, res) => {
       createdAt: nowIso(),
     };
 
-    usersById.set(user.id, user);
-    userIdsByEmail.set(user.email, user.id);
+    await database.createUser(user);
 
-    const existingAuth = getUserFromRequest(req);
+    const existingAuth = await getUserFromRequest(req);
 
     if (existingAuth) {
-      sessionsByToken.delete(existingAuth.token);
+      await database.deleteSessionByToken(existingAuth.token);
     }
 
     const token = `sess_${crypto.randomUUID()}`;
@@ -173,7 +167,7 @@ app.post("/api/auth/register", async (req, res) => {
       createdAt: nowIso(),
     };
 
-    sessionsByToken.set(token, session);
+    await database.createSession(session);
     setAuthCookie(res, token);
 
     res.status(201).json({
@@ -204,28 +198,17 @@ app.post("/api/auth/login", async (req, res) => {
     return;
   }
 
-  const userId = userIdsByEmail.get(email);
-
-  if (!userId) {
-    res.status(401).json({
-      ok: false,
-      message: "Invalid email or password.",
-    });
-    return;
-  }
-
-  const user = usersById.get(userId);
-
-  if (!user) {
-    userIdsByEmail.delete(email);
-    res.status(401).json({
-      ok: false,
-      message: "Invalid email or password.",
-    });
-    return;
-  }
-
   try {
+    const user = await database.findUserByEmail(email);
+
+    if (!user) {
+      res.status(401).json({
+        ok: false,
+        message: "Invalid email or password.",
+      });
+      return;
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
 
     if (!isValidPassword) {
@@ -236,10 +219,10 @@ app.post("/api/auth/login", async (req, res) => {
       return;
     }
 
-    const existingAuth = getUserFromRequest(req);
+    const existingAuth = await getUserFromRequest(req);
 
     if (existingAuth) {
-      sessionsByToken.delete(existingAuth.token);
+      await database.deleteSessionByToken(existingAuth.token);
     }
 
     const token = `sess_${crypto.randomUUID()}`;
@@ -249,7 +232,7 @@ app.post("/api/auth/login", async (req, res) => {
       createdAt: nowIso(),
     };
 
-    sessionsByToken.set(token, session);
+    await database.createSession(session);
     setAuthCookie(res, token);
 
     res.status(200).json({
@@ -268,11 +251,11 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", async (req, res) => {
   const token = req.cookies?.[authCookieName];
 
   if (token) {
-    sessionsByToken.delete(token);
+    await database.deleteSessionByToken(token);
   }
 
   clearAuthCookie(res);
@@ -356,7 +339,16 @@ app.use("/api", (_req, res) => {
   });
 });
 
-app.listen(port, () => {
-  // Keep startup logging concise for local development and deployment logs.
-  console.log(`Service listening on http://localhost:${port}`);
+async function startServer() {
+  await database.initializeDatabase();
+
+  app.listen(port, () => {
+    // Keep startup logging concise for local development and deployment logs.
+    console.log(`Service listening on http://localhost:${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Failed to initialize service:", error);
+  process.exit(1);
 });
