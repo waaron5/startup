@@ -60,10 +60,11 @@ else
 fi
 
 if pm2 describe ${service} >/dev/null 2>&1; then
-    pm2 restart ${service} --update-env
-else
-    pm2 start service/index.js --name ${service}
+    pm2 delete ${service}
 fi
+
+pm2 start service/index.js --name ${service} --update-env
+pm2 save
 ENDSSH
 
 printf "\n----> Local cleanup.\n"
