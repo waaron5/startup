@@ -1,5 +1,4 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import ProtectedRoute from "./components/ProtectedRoute";
 import CreditsPage from "./pages/CreditsPage";
 import GamePage from "./pages/GamePage";
 import HomePage from "./pages/HomePage";
@@ -11,14 +10,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route
-        path="/game/:roomCode"
-        element={
-          <ProtectedRoute>
-            <GamePage />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/game/:roomCode" element={<GamePage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="/results" element={<ResultsPage />} />
       <Route path="/credits" element={<CreditsPage />} />

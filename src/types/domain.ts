@@ -27,6 +27,7 @@ export type UserStats = {
 export type UserRecord = {
   id: string;
   email: string;
+  isGuest: boolean;
   password: string;
   displayName: string;
   createdAt: string;

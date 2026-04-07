@@ -1,14 +1,17 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import {
   ApiRequestError,
+  createGuestSessionInService,
   fetchCurrentUser,
   fetchResultsFromService,
   loginWithService,
@@ -47,12 +50,14 @@ type AuthContextValue = {
   user: UserRecord | null;
   session: AuthSession | null;
   isAuthenticated: boolean;
+  isGuestSession: boolean;
   isAuthLoading: boolean;
   login: (email: string, password: string) => Promise<AuthResult>;
   quickLogin: (input: RegisterInput) => Promise<AuthResult>;
   register: (input: RegisterInput) => Promise<AuthResult>;
   logout: () => Promise<void>;
   updateProfile: (input: ProfileUpdateInput) => Promise<AuthResult>;
+  ensurePlayableSession: () => Promise<UserRecord | null>;
   recordGameResult: (result: GameResult) => void;
 };
 
@@ -92,6 +97,7 @@ function createUserRecordFromService(
   return {
     id: serviceUser.id,
     email: serviceUser.email,
+    isGuest: Boolean(serviceUser.isGuest ?? existingUser?.isGuest),
     password: existingUser?.password ?? "",
     displayName: normalizeDisplayName(serviceUser.displayName, serviceUser.email),
     createdAt: serviceUser.createdAt,
@@ -133,9 +139,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     readJSON<AuthSession | null>(STORAGE_KEYS.session, null)
   );
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const usersRef = useRef(users);
+  const pendingPlayableSessionRef = useRef<Promise<UserRecord | null> | null>(null);
 
   useEffect(() => {
     writeJSON(STORAGE_KEYS.users, users);
+  }, [users]);
+
+  useEffect(() => {
+    usersRef.current = users;
   }, [users]);
 
   useEffect(() => {
@@ -169,7 +181,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [session, user]);
 
   function syncUserFromService(serviceUser: ServiceUser): UserRecord {
-    const existingUser = users.find((candidate) => candidate.id === serviceUser.id);
+    const existingUser = usersRef.current.find((candidate) => candidate.id === serviceUser.id);
     const userRecord = createUserRecordFromService(serviceUser, existingUser);
 
     setUsers((currentUsers) => {
@@ -190,9 +202,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     });
   }
 
-  function completeAuth(response: ServiceAuthResponse, fallbackMessage: string): AuthResult {
+  function syncAuthFromResponse(response: ServiceAuthResponse): UserRecord {
     const syncedUser = syncUserFromService(response.user);
     setSessionFromUser(syncedUser, response.session.loggedInAt);
+    return syncedUser;
+  }
+
+  function completeAuth(response: ServiceAuthResponse, fallbackMessage: string): AuthResult {
+    const syncedUser = syncAuthFromResponse(response);
 
     return {
       ok: true,
@@ -200,39 +217,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user: syncedUser,
     };
   }
-
-  useEffect(() => {
-    let isActive = true;
-
-    async function hydrateAuthFromService() {
-      try {
-        const response = await fetchCurrentUser();
-
-        if (!isActive) {
-          return;
-        }
-
-        const syncedUser = syncUserFromService(response.user);
-        setSessionFromUser(syncedUser, response.session.loggedInAt);
-      } catch {
-        if (!isActive) {
-          return;
-        }
-
-        setSession(null);
-      } finally {
-        if (isActive) {
-          setIsAuthLoading(false);
-        }
-      }
-    }
-
-    hydrateAuthFromService();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
 
   async function login(email: string, password: string): Promise<AuthResult> {
     const normalizedEmail = normalizeEmail(email);
@@ -361,10 +345,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function updateProfile(input: ProfileUpdateInput): Promise<AuthResult> {
-    if (!user) {
-      return { ok: false, message: "You must be logged in to update your profile." };
-    }
-
     const nextDisplayName = input.displayName?.trim();
 
     if (!nextDisplayName) {
@@ -399,6 +379,50 @@ export function AuthProvider({ children }: PropsWithChildren) {
       };
     }
   }
+
+  const ensurePlayableSession = useCallback(async (): Promise<UserRecord | null> => {
+    if (pendingPlayableSessionRef.current) {
+      return pendingPlayableSessionRef.current;
+    }
+
+    const pendingSession = (async () => {
+      try {
+        const response = await fetchCurrentUser();
+        return syncAuthFromResponse(response);
+      } catch {
+        try {
+          const guestResponse = await createGuestSessionInService();
+          return syncAuthFromResponse(guestResponse);
+        } catch {
+          setSession(null);
+          return null;
+        }
+      } finally {
+        pendingPlayableSessionRef.current = null;
+      }
+    })();
+
+    pendingPlayableSessionRef.current = pendingSession;
+    return pendingSession;
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function hydrateAuthFromService() {
+      await ensurePlayableSession();
+
+      if (isActive) {
+        setIsAuthLoading(false);
+      }
+    }
+
+    void hydrateAuthFromService();
+
+    return () => {
+      isActive = false;
+    };
+  }, [ensurePlayableSession]);
 
   function recordGameResult(result: GameResult): void {
     updateJSON<GameResult[]>(STORAGE_KEYS.results, [], (currentResults) => {
@@ -435,13 +459,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const value: AuthContextValue = {
     user,
     session,
-    isAuthenticated: Boolean(user && session),
+    isAuthenticated: Boolean(user && session && !user.isGuest),
+    isGuestSession: Boolean(user?.isGuest && session),
     isAuthLoading,
     login,
     quickLogin,
     register,
     logout,
     updateProfile,
+    ensurePlayableSession,
     recordGameResult,
   };
 

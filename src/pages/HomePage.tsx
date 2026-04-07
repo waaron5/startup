@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   createLobbyInService,
   fetchLobbyByRoomCode,
+  fillLobbyWithDevBotsInService,
   joinLobbyInService,
   startGameInService,
 } from "../lib/api";
@@ -14,13 +15,16 @@ import type { GameLobby } from "../types/domain";
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { ensurePlayableSession, updateProfile, user } = useAuth();
 
+  const [displayNameInput, setDisplayNameInput] = useState("");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [activeLobby, setActiveLobby] = useState<GameLobby | null>(null);
+  const [isFillingSeats, setIsFillingSeats] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isDevMode = import.meta.env.DEV;
 
   const isHost = !!activeLobby && activeLobby.hostUserId === user?.id;
 
@@ -50,12 +54,40 @@ export default function HomePage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [activeLobby, navigate]);
 
+  async function preparePlayerForRoom() {
+    const nextDisplayName = displayNameInput.trim();
+
+    if (!nextDisplayName) {
+      setErrorMessage("Enter your name before creating or joining a room.");
+      return null;
+    }
+
+    const playableUser = await ensurePlayableSession();
+
+    if (!playableUser) {
+      setErrorMessage("Unable to start a play session. Please try again.");
+      return null;
+    }
+
+    if (playableUser.displayName !== nextDisplayName) {
+      const result = await updateProfile({ displayName: nextDisplayName });
+
+      if (!result.ok) {
+        setErrorMessage(result.message);
+        return null;
+      }
+    }
+
+    return playableUser;
+  }
+
   async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage("");
 
-    if (!user) {
-      setErrorMessage("You must be signed in to join a game.");
+    const playableUser = await preparePlayerForRoom();
+
+    if (!playableUser) {
       return;
     }
 
@@ -80,8 +112,9 @@ export default function HomePage() {
   async function handleCreateRoom() {
     setErrorMessage("");
 
-    if (!user) {
-      setErrorMessage("You must be signed in to create a game.");
+    const playableUser = await preparePlayerForRoom();
+
+    if (!playableUser) {
       return;
     }
 
@@ -110,11 +143,40 @@ export default function HomePage() {
     setErrorMessage("");
     setIsStarting(true);
     try {
+      const playableUser = await ensurePlayableSession();
+
+      if (!playableUser) {
+        setErrorMessage("Unable to start a play session. Please try again.");
+        setIsStarting(false);
+        return;
+      }
+
       await startGameInService(activeLobby.roomCode);
       navigate(`/game/${activeLobby.roomCode}`);
     } catch (e: unknown) {
       setErrorMessage(e instanceof Error ? e.message : "Failed to start game.");
       setIsStarting(false);
+    }
+  }
+
+  async function handleFillSeatsForTesting() {
+    if (!activeLobby || isFillingSeats) return;
+
+    setErrorMessage("");
+    setIsFillingSeats(true);
+
+    try {
+      const res = await fillLobbyWithDevBotsInService(activeLobby.roomCode);
+
+      if (res.lobby) {
+        setActiveLobby(res.lobby);
+      } else {
+        setErrorMessage("Failed to add dev players.");
+      }
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to add dev players.");
+    } finally {
+      setIsFillingSeats(false);
     }
   }
 
@@ -132,7 +194,6 @@ export default function HomePage() {
     return (
       <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col items-center gap-4 pt-6">
         <h2 className="text-2xl font-bold text-text">Room: {activeLobby.roomCode}</h2>
-        <p className="text-text-muted text-sm">Share this code with your crew.</p>
 
         <div className="card w-full max-w-sm">
           <p className="text-xs text-text-muted uppercase tracking-wide mb-3">
@@ -158,14 +219,26 @@ export default function HomePage() {
         {errorMessage && <p className="text-danger text-sm text-center">{errorMessage}</p>}
 
         {isHost ? (
-          <button
-            className="btn-primary w-full max-w-sm py-3 text-lg"
-            disabled={!readyToStart || isStarting}
-            onClick={handleStartGame}
-            type="button"
-          >
-            {isStarting ? "Starting..." : readyToStart ? "Start Game" : `Waiting for players (${playerCount}/5)`}
-          </button>
+          <>
+            <button
+              className="btn-primary w-full max-w-sm py-3 text-lg"
+              disabled={!readyToStart || isStarting}
+              onClick={handleStartGame}
+              type="button"
+            >
+              {isStarting ? "Starting..." : readyToStart ? "Start Game" : `Waiting for players (${playerCount}/5)`}
+            </button>
+            {isDevMode && playerCount < 5 ? (
+              <button
+                className="btn-ghost w-full max-w-sm border border-white/20"
+                disabled={isFillingSeats}
+                onClick={handleFillSeatsForTesting}
+                type="button"
+              >
+                {isFillingSeats ? "Adding Dev Players..." : "Fill Seats For Testing"}
+              </button>
+            ) : null}
+          </>
         ) : (
           <div className="card w-full max-w-sm text-center py-4">
             <p className="text-text-muted">Waiting for the host to start the game...</p>
@@ -187,15 +260,28 @@ export default function HomePage() {
   return (
     <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col">
       <div className="flex flex-col items-center gap-2">
-        {user ? (
+        {user && !user.isGuest ? (
           <p className="text-text-muted text-center text-sm">
-            Signed in as <span className="text-text">{user.displayName}</span>
+            Signed in as{" "}
+            <span className="text-text">{user.displayName}</span>
           </p>
         ) : null}
         {errorMessage ? <p className="text-danger text-center">{errorMessage}</p> : null}
       </div>
 
       <form className="flex flex-col mt-8 items-center gap-2" onSubmit={handleJoinRoom}>
+        <label className="text-lg text-text flex flex-col items-start gap-2 w-80">
+          NAME
+          <input
+            className="input-field w-full"
+            name="displayName"
+            onChange={(event) => setDisplayNameInput(event.target.value)}
+            placeholder="NAME"
+            type="text"
+            value={displayNameInput}
+          />
+        </label>
+
         <label className="text-lg text-text flex flex-col items-start gap-2 w-80">
           ROOM CODE
           <input

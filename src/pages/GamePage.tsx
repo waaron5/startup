@@ -16,18 +16,32 @@ import VoteResultPhase from "../components/game/VoteResultPhase";
 export default function GamePage() {
   const navigate = useNavigate();
   const { roomCode: roomCodeParam } = useParams<{ roomCode: string }>();
-  const { user } = useAuth();
+  const { ensurePlayableSession, user } = useAuth();
   const { gameState, myRole, setRoomCode } = useGame();
 
   // Register the roomCode from URL into game context on mount
   useEffect(() => {
-    if (roomCodeParam) {
-      setRoomCode(roomCodeParam);
+    let isActive = true;
+
+    async function connectToRoom() {
+      if (!roomCodeParam) {
+        return;
+      }
+
+      const playableUser = await ensurePlayableSession();
+
+      if (playableUser && isActive) {
+        setRoomCode(roomCodeParam);
+      }
     }
+
+    void connectToRoom();
+
     return () => {
+      isActive = false;
       setRoomCode(null);
     };
-  }, [roomCodeParam, setRoomCode]);
+  }, [ensurePlayableSession, roomCodeParam, setRoomCode]);
 
   const myUserId = user?.id ?? "";
 
@@ -89,4 +103,3 @@ export default function GamePage() {
     </div>
   );
 }
-

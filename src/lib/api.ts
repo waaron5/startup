@@ -18,6 +18,7 @@ export class ApiRequestError extends Error {
 export type ServiceUser = {
   id: string;
   email: string;
+  isGuest: boolean;
   displayName: string;
   createdAt: string;
   stats: UserStats;
@@ -138,6 +139,12 @@ export function logoutFromService() {
   });
 }
 
+export function createGuestSessionInService() {
+  return requestJson<ServiceAuthResponse>("/api/auth/guest", {
+    method: "POST",
+  });
+}
+
 export function fetchCurrentUser() {
   return requestJson<ServiceAuthResponse>("/api/auth/me");
 }
@@ -189,6 +196,12 @@ export function updateLobbyStatusInService(roomCode: string, status: GameLobby["
 
 export function reopenLobbyInService(roomCode: string) {
   return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/reopen`, {
+    method: "POST",
+  });
+}
+
+export function fillLobbyWithDevBotsInService(roomCode: string) {
+  return requestJson<ServiceLobbyResponse>(`/api/lobbies/${encodeURIComponent(roomCode)}/dev-fill`, {
     method: "POST",
   });
 }

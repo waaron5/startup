@@ -50,6 +50,7 @@ function toPublicUser(user) {
   return {
     id: user.id,
     email: user.email,
+    isGuest: Boolean(user.isGuest),
     displayName: user.displayName,
     createdAt: user.createdAt,
     stats: {
@@ -169,6 +170,35 @@ async function getUserFromRequest(req) {
   return { token, session, user };
 }
 
+function createGuestUser() {
+  const suffix = crypto.randomUUID();
+  const label = suffix.slice(0, 4).toUpperCase();
+
+  return {
+    id: `guest_${suffix}`,
+    email: `guest-${suffix}@guest.thequisling.local`,
+    isGuest: true,
+    displayName: `Guest ${label}`,
+    createdAt: nowIso(),
+    stats: {
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+    },
+    friends: [],
+    history: [],
+  };
+}
+
+function createSessionForUser(userId) {
+  return {
+    token: `sess_${crypto.randomUUID()}`,
+    userId,
+    createdAt: nowIso(),
+  };
+}
+
 function setAuthCookie(res, token) {
   res.cookie(authCookieName, token, {
     httpOnly: true,
@@ -219,6 +249,7 @@ const PHASE_TIMERS_MS = {
   submit_heist: 15000,
   final_accusation: 20000,
 };
+const DEV_BOT_ID_PREFIX = "devbot_";
 
 // In-memory map to avoid duplicate scheduled timeouts: key = `${roomCode}:${phase}`
 const scheduledTimeouts = new Map();
@@ -261,6 +292,41 @@ function buildClientState(game) {
     heistReveal: game.heistReveal || null,
     accusationReveal: isGameOver ? (game.accusationVotes || {}) : null,
     result: isGameOver ? game.result : null,
+  };
+}
+
+function isDevelopmentMode() {
+  return process.env.NODE_ENV !== "production";
+}
+
+function isDevBotUserId(userId) {
+  return String(userId || "").startsWith(DEV_BOT_ID_PREFIX);
+}
+
+function getDevBotPlayerIds(game) {
+  return (game.players || [])
+    .map((player) => player.userId)
+    .filter((userId) => isDevBotUserId(userId));
+}
+
+function createDevBotUser(roomCode, index) {
+  const suffix = crypto.randomUUID();
+
+  return {
+    id: `${DEV_BOT_ID_PREFIX}${suffix}`,
+    email: `devbot-${roomCode.toLowerCase()}-${index}-${suffix}@guest.thequisling.local`,
+    isGuest: true,
+    isDevBot: true,
+    displayName: `Dev Bot ${index}`,
+    createdAt: nowIso(),
+    stats: {
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+    },
+    friends: [],
+    history: [],
   };
 }
 
@@ -639,8 +705,16 @@ async function advanceFromVoteResult(roomCode) {
       return;
     }
 
+    if (next.phase === "submit_heist") {
+      next = await applyDevBotHeistCards(roomCode, next);
+    }
+
     await database.updateGameByRoomCode(roomCode, next);
     io.to(roomCode).emit("game:state", buildClientState(next));
+
+    if (next.phase === "heist_result") {
+      setTimeout(() => advanceFromHeistResult(roomCode), RESULT_DISPLAY_MS);
+    }
   } catch (err) {
     console.error(`advanceFromVoteResult error for ${roomCode}:`, err);
   }
@@ -665,6 +739,92 @@ function scheduleNextPhaseTimeout(game, roomCode) {
   if (["pick_building", "propose_team", "vote", "submit_heist", "final_accusation"].includes(game.phase)) {
     schedulePhaseTimeout(roomCode, game.phase, delay);
   }
+}
+
+async function applyDevBotVotes(roomCode, game) {
+  if (!isDevelopmentMode() || game.phase !== "vote") {
+    return game;
+  }
+
+  let next = game;
+
+  for (const botUserId of getDevBotPlayerIds(next)) {
+    if (next.votes?.[botUserId]) {
+      continue;
+    }
+
+    const updated = await database.atomicSetGameField(
+      roomCode,
+      "vote",
+      "votes",
+      botUserId,
+      "approve"
+    );
+
+    if (updated) {
+      next = updated;
+    }
+  }
+
+  if (Object.keys(next.votes || {}).length >= next.players.length) {
+    next = resolveVotes(next);
+  }
+
+  return next;
+}
+
+async function applyDevBotHeistCards(roomCode, game) {
+  if (!isDevelopmentMode() || game.phase !== "submit_heist") {
+    return game;
+  }
+
+  let next = game;
+  const botTeamMembers = (next.proposedTeam || []).filter((userId) => isDevBotUserId(userId));
+
+  for (const botUserId of botTeamMembers) {
+    if (next.heistCards?.[botUserId]) {
+      continue;
+    }
+
+    const updated = await database.atomicSetGameField(
+      roomCode,
+      "submit_heist",
+      "heistCards",
+      botUserId,
+      "clean"
+    );
+
+    if (updated) {
+      next = updated;
+    }
+  }
+
+  const nextCards = next.heistCards || {};
+
+  if (Object.keys(nextCards).length >= (next.proposedTeam || []).length) {
+    const cleanCount = Object.values(nextCards).filter((card) => card === "clean").length;
+    const sabotageCount = Object.values(nextCards).filter((card) => card === "sabotage").length;
+    const outcome = sabotageCount > 0 ? "alarm" : "success";
+
+    next = {
+      ...next,
+      alarm: outcome === "alarm" ? next.alarm + 1 : next.alarm,
+      successes: outcome === "success" ? next.successes + 1 : next.successes,
+      spentBuildingIds: next.selectedBuildingId
+        ? [...(next.spentBuildingIds || []), next.selectedBuildingId]
+        : next.spentBuildingIds || [],
+      operationHistory: [
+        ...(next.operationHistory || []),
+        buildOperationRecord(next, outcome, cleanCount, sabotageCount),
+      ],
+      heistReveal: { cleanCount, sabotageCount, outcome },
+      phase: "heist_result",
+      phaseDeadline: Date.now() + RESULT_DISPLAY_MS,
+      pendingNextPhase: "next_operation",
+    };
+  }
+
+  return next;
 }
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
@@ -785,15 +945,10 @@ app.post("/api/auth/register", async (req, res) => {
       await database.deleteSessionByToken(existingAuth.token);
     }
 
-    const token = `sess_${crypto.randomUUID()}`;
-    const session = {
-      token,
-      userId: user.id,
-      createdAt: nowIso(),
-    };
+    const session = createSessionForUser(user.id);
 
     await database.createSession(session);
-    setAuthCookie(res, token);
+    setAuthCookie(res, session.token);
 
     res.status(201).json({
       ok: true,
@@ -850,15 +1005,10 @@ app.post("/api/auth/login", async (req, res) => {
       await database.deleteSessionByToken(existingAuth.token);
     }
 
-    const token = `sess_${crypto.randomUUID()}`;
-    const session = {
-      token,
-      userId: user.id,
-      createdAt: nowIso(),
-    };
+    const session = createSessionForUser(user.id);
 
     await database.createSession(session);
-    setAuthCookie(res, token);
+    setAuthCookie(res, session.token);
 
     res.status(200).json({
       ok: true,
@@ -872,6 +1022,46 @@ app.post("/api/auth/login", async (req, res) => {
     res.status(500).json({
       ok: false,
       message: "Failed to log in.",
+    });
+  }
+});
+
+app.post("/api/auth/guest", async (req, res) => {
+  try {
+    const existingAuth = await getUserFromRequest(req);
+
+    if (existingAuth) {
+      res.status(200).json({
+        ok: true,
+        message: existingAuth.user.isGuest ? "Guest session ready." : "Signed in successfully.",
+        user: toPublicUser(existingAuth.user),
+        session: {
+          loggedInAt: existingAuth.session.createdAt,
+        },
+      });
+      return;
+    }
+
+    const guestUser = createGuestUser();
+    await database.createUser(guestUser);
+
+    const session = createSessionForUser(guestUser.id);
+    await database.createSession(session);
+    setAuthCookie(res, session.token);
+
+    res.status(201).json({
+      ok: true,
+      message: "Guest session ready.",
+      user: toPublicUser(guestUser),
+      session: {
+        loggedInAt: session.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("POST /api/auth/guest error:", error);
+    res.status(500).json({
+      ok: false,
+      message: "Failed to create a guest session.",
     });
   }
 });
@@ -1255,6 +1445,75 @@ app.post("/api/lobbies/:roomCode/reopen", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/api/lobbies/:roomCode/dev-fill", requireAuth, async (req, res) => {
+  if (!isDevelopmentMode()) {
+    res.status(404).json({
+      ok: false,
+      message: "Route not found.",
+    });
+    return;
+  }
+
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({
+      ok: false,
+      message: "Room code must be 4 letters.",
+    });
+    return;
+  }
+
+  try {
+    let lobby = await database.getLobbyByRoomCode(roomCode);
+
+    if (!lobby) {
+      res.status(404).json({
+        ok: false,
+        message: "Lobby not found.",
+      });
+      return;
+    }
+
+    if (lobby.hostUserId !== user.id) {
+      res.status(403).json({
+        ok: false,
+        message: "Only the host can use dev fill.",
+      });
+      return;
+    }
+
+    if (lobby.status !== "open") {
+      res.status(400).json({
+        ok: false,
+        message: "Dev fill is only available before the game starts.",
+      });
+      return;
+    }
+
+    let botIndex = 1;
+
+    while ((lobby.players || []).length < PLAYERS_REQUIRED) {
+      const nextBot = createDevBotUser(roomCode, botIndex);
+      botIndex += 1;
+      await database.createUser(nextBot);
+      lobby = await database.joinLobbyByRoomCode(roomCode, nextBot.id, nowIso());
+    }
+
+    res.status(200).json({
+      ok: true,
+      lobby: toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)),
+    });
+  } catch (error) {
+    console.error("POST /api/lobbies/:roomCode/dev-fill error:", error);
+    res.status(500).json({
+      ok: false,
+      message: "Failed to fill lobby with dev players.",
+    });
+  }
+});
+
 // ─── Game Endpoints ───────────────────────────────────────────────────────────
 
 // POST /api/games — Host starts the game for a lobby
@@ -1305,8 +1564,14 @@ app.post("/api/games", requireAuth, async (req, res) => {
     const shuffled = [...players].sort(() => Math.random() - 0.5);
     const quislingId = shuffled[0].userId;
 
-    // Random first leader
-    const leaderId = players[Math.floor(Math.random() * players.length)].userId;
+    const devBotIds = players
+      .map((player) => player.userId)
+      .filter((playerId) => isDevBotUserId(playerId));
+
+    // Keep the host in control when testing with dev bots.
+    const leaderId = devBotIds.length > 0
+      ? user.id
+      : players[Math.floor(Math.random() * players.length)].userId;
 
     const gameDoc = {
       roomCode,
@@ -1326,7 +1591,7 @@ app.post("/api/games", requireAuth, async (req, res) => {
       selectedBuildingId: null,
       phaseDeadline: null,
       operationHistory: [],
-      readyPlayerIds: [],
+      readyPlayerIds: devBotIds,
       voteReveal: null,
       heistReveal: null,
       pendingNextPhase: null,
@@ -1563,10 +1828,15 @@ app.post("/api/games/:roomCode/propose-team", requireAuth, async (req, res) => {
     };
 
     schedulePhaseTimeout(roomCode, "vote", PHASE_TIMERS_MS.vote);
-    await database.updateGameByRoomCode(roomCode, next);
-    io.to(roomCode).emit("game:state", buildClientState(next));
+    let finalState = await applyDevBotVotes(roomCode, next);
+    await database.updateGameByRoomCode(roomCode, finalState);
+    io.to(roomCode).emit("game:state", buildClientState(finalState));
 
-    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+    if (finalState.phase === "vote_result") {
+      setTimeout(() => advanceFromVoteResult(roomCode), RESULT_DISPLAY_MS);
+    }
+
+    res.status(200).json({ ok: true, gameState: buildClientState(finalState) });
   } catch (err) {
     console.error("POST /api/games/:roomCode/propose-team error:", err);
     res.status(500).json({ ok: false, message: "Failed to propose team." });
@@ -1611,11 +1881,13 @@ app.post("/api/games/:roomCode/vote", requireAuth, async (req, res) => {
       return;
     }
 
-    let next = updated;
+    let next = await applyDevBotVotes(roomCode, updated);
 
     // If all players have voted, resolve
-    if (Object.keys(next.votes || {}).length >= next.players.length) {
-      next = resolveVotes(next);
+    if (next.phase === "vote_result" || Object.keys(next.votes || {}).length >= next.players.length) {
+      if (next.phase !== "vote_result") {
+        next = resolveVotes(next);
+      }
       await database.updateGameByRoomCode(roomCode, next);
       io.to(roomCode).emit("game:state", buildClientState(next));
       setTimeout(() => advanceFromVoteResult(roomCode), RESULT_DISPLAY_MS);
@@ -1820,9 +2092,6 @@ async function startServer() {
 
   httpServer.listen(port, () => {
     // Keep startup logging concise for local development and deployment logs.
-    console.log(`Service listening on http://localhost:${port}`);
-  });
-}
     console.log(`Service listening on http://localhost:${port}`);
   });
 }
