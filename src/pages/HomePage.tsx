@@ -16,7 +16,7 @@ import { fetchMissionIntel } from "../lib/missionIntel";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "../lib/roomCode";
 import { readJSON, writeJSON } from "../lib/storage";
 import { createId, nowIso } from "../lib/time";
-import type { GameLobby, UserRecord } from "../types/domain";
+import type { GameLobby } from "../types/domain";
 
 type RouteMessageState = {
   message?: string;
@@ -25,7 +25,7 @@ type RouteMessageState = {
 export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, isAuthLoading, user } = useAuth();
+  const { user } = useAuth();
   const { setGameSession } = useGame();
   useNoScroll();
 
@@ -38,7 +38,6 @@ export default function HomePage() {
   const [missionIntel, setMissionIntel] = useState("");
   const [intelError, setIntelError] = useState("");
   const [isIntelLoading, setIsIntelLoading] = useState(true);
-  const [intelRequestId, setIntelRequestId] = useState(0);
 
   useEffect(() => {
     if (user?.displayName) {
@@ -86,39 +85,34 @@ export default function HomePage() {
     return () => {
       isActive = false;
     };
-  }, [intelRequestId]);
+  }, []);
 
   function clearMessages() {
     setInfoMessage("");
     setErrorMessage("");
   }
 
-  function requireAuthenticatedSession(): UserRecord | null {
-    if (isAuthLoading) {
-      setInfoMessage("Checking sign-in session. Please try again in a moment.");
+  function buildParticipantIdentity() {
+    const playerName = name.trim() || user?.displayName || "";
+
+    if (!playerName) {
+      setErrorMessage("Enter a player name before joining or creating a room.");
       return null;
     }
 
-    if (isAuthenticated && user) {
-      return user;
-    }
-
-    navigate("/profile", {
-      state: {
-        fromPath: "/",
-        message: "Please log in before joining or creating a room.",
-      },
-    });
-    return null;
+    return {
+      userId: user?.id ?? createId("guest"),
+      playerName,
+    };
   }
 
   async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
 
-    const currentUser = requireAuthenticatedSession();
+    const participant = buildParticipantIdentity();
 
-    if (!currentUser) {
+    if (!participant) {
       return;
     }
 
@@ -129,7 +123,7 @@ export default function HomePage() {
       return;
     }
 
-    let existingLobby: GameLobby | null = null;
+    let existingLobby: GameLobby | null;
 
     try {
       const fetched = await fetchLobbyByRoomCode(normalizedCode);
@@ -141,13 +135,6 @@ export default function HomePage() {
 
     if (!existingLobby) {
       setErrorMessage("Room code not found.");
-      return;
-    }
-
-    const playerName = name.trim() || currentUser.displayName;
-
-    if (!playerName) {
-      setErrorMessage("Enter a player name before joining.");
       return;
     }
 
@@ -167,9 +154,9 @@ export default function HomePage() {
       const updatedLobby: GameLobby = {
         ...existingLobby,
         updatedAt: nowIso(),
-        players: existingLobby.players.includes(currentUser.id)
+        players: existingLobby.players.includes(participant.userId)
           ? existingLobby.players
-          : [...existingLobby.players, currentUser.id],
+          : [...existingLobby.players, participant.userId],
       };
 
       const nextLobbies = lobbies.map((candidate) =>
@@ -182,8 +169,8 @@ export default function HomePage() {
     setGameSession(
       createGameSession({
         roomCode: normalizedCode,
-        userId: currentUser.id,
-        playerName,
+        userId: participant.userId,
+        playerName: participant.playerName,
       })
     );
     navigate("/game");
@@ -192,16 +179,9 @@ export default function HomePage() {
   async function handleCreateRoom() {
     clearMessages();
 
-    const currentUser = requireAuthenticatedSession();
+    const participant = buildParticipantIdentity();
 
-    if (!currentUser) {
-      return;
-    }
-
-    const playerName = name.trim() || currentUser.displayName;
-
-    if (!playerName) {
-      setErrorMessage("Enter a player name before creating a room.");
+    if (!participant) {
       return;
     }
 
@@ -229,8 +209,8 @@ export default function HomePage() {
         roomCode: newRoomCode,
         createdAt: timestamp,
         updatedAt: timestamp,
-        hostUserId: currentUser.id,
-        players: [currentUser.id],
+        hostUserId: participant.userId,
+        players: [participant.userId],
         status: "open",
       };
 
@@ -240,8 +220,8 @@ export default function HomePage() {
     setGameSession(
       createGameSession({
         roomCode: newRoomCode,
-        userId: currentUser.id,
-        playerName,
+        userId: participant.userId,
+        playerName: participant.playerName,
       })
     );
     setRoomCode(newRoomCode);
@@ -249,31 +229,15 @@ export default function HomePage() {
   }
 
   return (
-    <AppLayout header={<SiteHeader subtitle />}>
+    <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col">
       <div className="flex flex-col items-center gap-2">
-        <p className="text-text-muted text-center">
-          {isAuthLoading
-            ? "Checking sign-in status..."
-            : isAuthenticated && user
-            ? `Signed in as ${user.displayName} (${user.email})`
-            : "You are not logged in. Join/Create will redirect you to Profile."}
-        </p>
+        {user ? (
+          <p className="text-text-muted text-center">
+            Signed in as {user.displayName} ({user.email})
+          </p>
+        ) : null}
         {infoMessage ? <p className="text-success text-center">{infoMessage}</p> : null}
         {errorMessage ? <p className="text-danger text-center">{errorMessage}</p> : null}
-        <div className="w-full max-w-xl text-center mt-2">
-          <p className="text-text-muted text-xs uppercase tracking-wide">Mission Intel</p>
-          <p className="text-text-muted text-xs">Source: Advice Slip API (third-party)</p>
-          {isIntelLoading ? <p className="text-text-muted mt-1">Loading intel...</p> : null}
-          {!isIntelLoading && intelError ? <p className="text-danger mt-1">{intelError}</p> : null}
-          {!isIntelLoading && !intelError ? <p className="text-text mt-1">{missionIntel}</p> : null}
-          <button
-            className="btn-ghost mt-2 border border-white/20"
-            onClick={() => setIntelRequestId((currentId) => currentId + 1)}
-            type="button"
-          >
-            Refresh Intel
-          </button>
-        </div>
       </div>
 
       <form className="flex flex-col mt-8 items-center gap-2" onSubmit={handleJoinRoom}>
@@ -313,6 +277,22 @@ export default function HomePage() {
           CREATE ROOM
         </button>
       </form>
+
+      <p className="mx-auto mt-6 max-w-2xl px-4 text-center text-text-muted">
+        <em>
+          Collaborate to pull off daring heists against a corrupt regime, but remember:
+          <br />
+          one player is not who they claim to be.
+        </em>
+      </p>
+
+      <div className="mt-auto w-full max-w-xl self-center pb-4 pt-6 text-center">
+        <p className="text-text-muted text-xs uppercase tracking-wide">Mission Intel</p>
+        <p className="text-text-muted text-xs">Source: Advice Slip API (third-party)</p>
+        {isIntelLoading ? <p className="text-text-muted mt-1">Loading intel...</p> : null}
+        {!isIntelLoading && intelError ? <p className="text-danger mt-1">{intelError}</p> : null}
+        {!isIntelLoading && !intelError ? <p className="text-text mt-1">{missionIntel}</p> : null}
+      </div>
     </AppLayout>
   );
 }

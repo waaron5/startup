@@ -57,16 +57,20 @@ export default function RequireResults({ children }: RequireResultsProps) {
   }, [user]);
 
   const savedResults = remoteResults ?? localResults;
+  const selectedResultId = new URLSearchParams(location.search).get("resultId");
+  const visibleResults = user
+    ? savedResults.filter((result) => result.userId === user.id)
+    : savedResults;
 
-  const hasResultForUser = Boolean(
-    user && savedResults.some((result) => result.userId === user.id)
-  );
+  const hasVisibleResult = selectedResultId
+    ? visibleResults.some((result) => result.id === selectedResultId)
+    : visibleResults.length > 0;
 
   if (isLoading) {
     return null;
   }
 
-  if (!hasResultForUser) {
+  if (!hasVisibleResult) {
     return (
       <Navigate
         replace

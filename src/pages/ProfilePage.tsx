@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
 import { STORAGE_KEYS } from "../constants/storageKeys";
@@ -10,13 +10,38 @@ import type { GameResult } from "../types/domain";
 
 type RouteMessageState = {
   message?: string;
+  fromPath?: string;
 };
 
+const DEV_TEST_ACCOUNTS = [
+  {
+    label: "Dev Player 1",
+    email: "dev1@thequisling.test",
+    password: "devplayer1!",
+    displayName: "Dev Player 1",
+  },
+  {
+    label: "Dev Player 2",
+    email: "dev2@thequisling.test",
+    password: "devplayer2!",
+    displayName: "Dev Player 2",
+  },
+  {
+    label: "Dev Player 3",
+    email: "dev3@thequisling.test",
+    password: "devplayer3!",
+    displayName: "Dev Player 3",
+  },
+] as const;
+
 export default function ProfilePage() {
-  const { isAuthenticated, isAuthLoading, user, login, logout, register, updateProfile } =
+  const { isAuthenticated, isAuthLoading, user, login, quickLogin, logout, register, updateProfile } =
     useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
-  const routeMessage = (location.state as RouteMessageState | null)?.message ?? "";
+  const routeState = location.state as RouteMessageState | null;
+  const routeMessage = routeState?.message ?? "";
+  const postAuthPath = routeState?.fromPath ?? "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -115,6 +140,14 @@ export default function ProfilePage() {
     setErrorMessage("");
   }
 
+  function navigateAfterAuth() {
+    if (!postAuthPath) {
+      return;
+    }
+
+    navigate(postAuthPath, { replace: true });
+  }
+
   async function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
@@ -126,6 +159,7 @@ export default function ProfilePage() {
       setStatusMessage(result.message);
       setPassword("");
       setIsSubmitting(false);
+      navigateAfterAuth();
       return;
     }
 
@@ -148,6 +182,7 @@ export default function ProfilePage() {
       setPassword("");
       setRegistrationDisplayName("");
       setIsSubmitting(false);
+      navigateAfterAuth();
       return;
     }
 
@@ -180,6 +215,30 @@ export default function ProfilePage() {
     setPassword("");
     setStatusMessage("Logged out.");
     setErrorMessage("");
+    setIsSubmitting(false);
+  }
+
+  async function handleQuickLogin(account: (typeof DEV_TEST_ACCOUNTS)[number]) {
+    clearMessages();
+    setIsSubmitting(true);
+
+    const result = await quickLogin({
+      email: account.email,
+      password: account.password,
+      displayName: account.displayName,
+    });
+
+    if (result.ok) {
+      setStatusMessage(result.message);
+      setEmail(account.email);
+      setPassword("");
+      setRegistrationDisplayName(account.displayName);
+      setIsSubmitting(false);
+      navigate(postAuthPath || "/", { replace: true });
+      return;
+    }
+
+    setErrorMessage(result.message);
     setIsSubmitting(false);
   }
 
@@ -252,6 +311,25 @@ export default function ProfilePage() {
               >
                 Create Account
               </button>
+            </div>
+            <div className="w-80 border-t border-white/10 pt-4 flex flex-col gap-3">
+              <p className="text-center text-sm text-text-muted">Quick test login</p>
+              {DEV_TEST_ACCOUNTS.map((account) => (
+                <button
+                  key={account.email}
+                  className="btn-ghost w-full py-3 border border-white/20 text-left"
+                  disabled={isSubmitting || isAuthLoading}
+                  onClick={() => handleQuickLogin(account)}
+                  type="button"
+                >
+                  <span className="block text-text">{account.label}</span>
+                  <span className="block text-xs text-text-muted">{account.email}</span>
+                </button>
+              ))}
+              <p className="text-text-muted text-xs text-center">
+                Use separate browser profiles or an incognito window for each test player because
+                authentication is cookie-based.
+              </p>
             </div>
             <p className="text-text-muted text-sm text-center max-w-sm">
               Authentication is handled by the backend service and persisted with a secure

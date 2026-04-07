@@ -1,5 +1,4 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import ProtectedRoute from "./components/ProtectedRoute";
 import RequireGameSession from "./components/RequireGameSession";
 import RequireResults from "./components/RequireResults";
 import CreditsPage from "./pages/CreditsPage";
@@ -16,22 +15,18 @@ export default function App() {
       <Route
         path="/game"
         element={
-          <ProtectedRoute message="Please log in before entering a game room.">
-            <RequireGameSession>
-              <GamePage />
-            </RequireGameSession>
-          </ProtectedRoute>
+          <RequireGameSession>
+            <GamePage />
+          </RequireGameSession>
         }
       />
       <Route path="/profile" element={<ProfilePage />} />
       <Route
         path="/results"
         element={
-          <ProtectedRoute message="Please log in before viewing results.">
-            <RequireResults>
-              <ResultsPage />
-            </RequireResults>
-          </ProtectedRoute>
+          <RequireResults>
+            <ResultsPage />
+          </RequireResults>
         }
       />
       <Route path="/credits" element={<CreditsPage />} />

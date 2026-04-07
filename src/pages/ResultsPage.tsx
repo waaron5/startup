@@ -28,6 +28,11 @@ export default function ResultsPage() {
     let isActive = true;
 
     async function loadResults() {
+      if (!user) {
+        setRemoteResults(null);
+        return;
+      }
+
       try {
         const response = await fetchResultsFromService();
 
@@ -51,43 +56,44 @@ export default function ResultsPage() {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [user]);
 
   const savedResults = remoteResults ?? localResults;
-
-  const userResults = useMemo(
+  const visibleResults = useMemo(
     () =>
-      user
-        ? savedResults
-            .filter((result) => result.userId === user.id)
-            .sort(
-              (resultA, resultB) =>
-                new Date(resultB.completedAt).getTime() - new Date(resultA.completedAt).getTime()
-            )
-        : [],
+      [...(user ? savedResults.filter((savedResult) => savedResult.userId === user.id) : savedResults)]
+        .sort(
+          (resultA, resultB) =>
+            new Date(resultB.completedAt).getTime() - new Date(resultA.completedAt).getTime()
+        ),
     [savedResults, user]
   );
 
   const result = useMemo(() => {
-    if (!userResults.length) {
+    if (!visibleResults.length) {
       return null;
     }
 
     if (selectedResultId) {
-      return userResults.find((candidate) => candidate.id === selectedResultId) ?? userResults[0];
+      return (
+        visibleResults.find((candidate) => candidate.id === selectedResultId) ?? visibleResults[0]
+      );
     }
 
-    return userResults[0];
-  }, [selectedResultId, userResults]);
+    return visibleResults[0];
+  }, [selectedResultId, visibleResults]);
 
   async function handlePlayAgain() {
     setMessage("");
     setErrorMessage("");
 
-    if (!user || !result) {
-      setErrorMessage("No user/result context available to replay this match.");
+    if (!result) {
+      setErrorMessage("No result is available to replay this match.");
       return;
     }
+
+    const replayUserId = user?.id ?? createId("guest");
+    const replayPlayerName = user?.displayName ?? "Guest Player";
 
     const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
     const timestamp = nowIso();
@@ -100,9 +106,9 @@ export default function ResultsPage() {
         ...existingLobby,
         status: "open",
         updatedAt: timestamp,
-        players: existingLobby.players.includes(user.id)
+        players: existingLobby.players.includes(replayUserId)
           ? existingLobby.players
-          : [...existingLobby.players, user.id],
+          : [...existingLobby.players, replayUserId],
       };
 
       nextLobbies = lobbies.map((lobby) => (lobby.id === replayLobby.id ? replayLobby : lobby));
@@ -112,8 +118,8 @@ export default function ResultsPage() {
         roomCode: result.roomCode,
         createdAt: timestamp,
         updatedAt: timestamp,
-        hostUserId: user.id,
-        players: [user.id],
+        hostUserId: replayUserId,
+        players: [replayUserId],
         status: "open",
       };
 
@@ -139,8 +145,8 @@ export default function ResultsPage() {
     setGameSession(
       createGameSession({
         roomCode: result.roomCode,
-        userId: user.id,
-        playerName: user.displayName,
+        userId: replayUserId,
+        playerName: replayPlayerName,
         actionLogPrefix: "Replay session created",
       })
     );
@@ -149,7 +155,7 @@ export default function ResultsPage() {
     navigate("/game");
   }
 
-  if (!result || !user) {
+  if (!result) {
     return (
       <AppLayout
         header={<SiteHeader />}
@@ -213,9 +219,11 @@ export default function ResultsPage() {
           <Link className="btn-ghost border border-white/20" to="/">
             Back to lobby
           </Link>
-          <Link className="btn-ghost border border-white/20" to="/profile">
-            View profile
-          </Link>
+          {user ? (
+            <Link className="btn-ghost border border-white/20" to="/profile">
+              View profile
+            </Link>
+          ) : null}
         </div>
       </section>
     </AppLayout>

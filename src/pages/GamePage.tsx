@@ -32,7 +32,7 @@ import type { GameLobby, GameOutcome, GameResult } from "../types/domain";
 
 export default function GamePage() {
   const navigate = useNavigate();
-  const { user, recordGameResult } = useAuth();
+  const { recordGameResult } = useAuth();
   const { gameSession, setGameSession, clearGameSession } = useGame();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -151,7 +151,7 @@ export default function GamePage() {
     [gameSession?.selectedBuildingId]
   );
 
-  if (!gameSession || !user || gameSession.userId !== user.id) {
+  if (!gameSession) {
     return (
       <div className="bg-bg text-text min-h-screen flex items-center justify-center p-6">
         <div className="card w-full max-w-xl text-center">
@@ -233,7 +233,7 @@ export default function GamePage() {
         return {
           ...lobby,
           updatedAt: nowIso(),
-          players: lobby.players.filter((playerId) => playerId !== user.id),
+          players: lobby.players.filter((playerId) => playerId !== gameSession.userId),
         };
       })
       .filter((lobby) => lobby.players.length > 0);
@@ -249,22 +249,40 @@ export default function GamePage() {
 
   return (
     <div className="bg-bg text-text h-[100dvh] overflow-hidden flex flex-col items-center">
-      <nav className="w-full px-3 pt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs sm:text-sm text-text-muted">
-        <div className="hidden md:block">
-          <TopNav />
-        </div>
-        <button
-          className="hover:text-text"
-          onClick={() => setIsHelpOpen(true)}
-          type="button"
-        >
-          How to play
-        </button>
-        <span className="text-text">Room code: {gameSession.roomCode}</span>
-        <button className="hover:text-text" id="leave-link" onClick={handleLeaveRoom} type="button">
-          Leave room
-        </button>
-      </nav>
+      <header className="w-full px-3 pt-3">
+        <TopNav
+          menuItems={[
+            {
+              kind: "action",
+              label: "How to play",
+              onClick: () => setIsHelpOpen(true),
+            },
+            {
+              kind: "action",
+              label: "Leave room",
+              icon: (
+                <svg
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.75"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M10 6H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h5" />
+                  <path d="M14 8l4 4-4 4" />
+                  <path d="M9 12h9" />
+                </svg>
+              ),
+              onClick: handleLeaveRoom,
+            },
+          ]}
+          title={gameSession.roomCode}
+          titleTo=""
+        />
+      </header>
 
       <StorageRecoveryBanner />
 

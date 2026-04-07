@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import { useGame } from "../context/GameContext";
 
 type RequireGameSessionProps = {
@@ -8,11 +7,10 @@ type RequireGameSessionProps = {
 };
 
 export default function RequireGameSession({ children }: RequireGameSessionProps) {
-  const { user } = useAuth();
   const { gameSession } = useGame();
   const location = useLocation();
 
-  if (!gameSession || !user || gameSession.userId !== user.id) {
+  if (!gameSession) {
     return (
       <Navigate
         replace

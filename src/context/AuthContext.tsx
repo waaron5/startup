@@ -15,6 +15,7 @@ import {
   logoutFromService,
   registerWithService,
   saveResultToService,
+  type ServiceAuthResponse,
   updateProfileInService,
   type ServiceUser,
 } from "../lib/api";
@@ -48,6 +49,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isAuthLoading: boolean;
   login: (email: string, password: string) => Promise<AuthResult>;
+  quickLogin: (input: RegisterInput) => Promise<AuthResult>;
   register: (input: RegisterInput) => Promise<AuthResult>;
   logout: () => Promise<void>;
   updateProfile: (input: ProfileUpdateInput) => Promise<AuthResult>;
@@ -190,6 +192,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
     });
   }
 
+  function completeAuth(response: ServiceAuthResponse, fallbackMessage: string): AuthResult {
+    const syncedUser = syncUserFromService(response.user);
+    setSessionFromUser(syncedUser, response.session.loggedInAt);
+
+    return {
+      ok: true,
+      message: response.message ?? fallbackMessage,
+      user: syncedUser,
+    };
+  }
+
   useEffect(() => {
     let isActive = true;
 
@@ -236,18 +249,75 @@ export function AuthProvider({ children }: PropsWithChildren) {
         password,
       });
 
-      const syncedUser = syncUserFromService(response.user);
-      setSessionFromUser(syncedUser, response.session.loggedInAt);
-
-      return {
-        ok: true,
-        message: response.message ?? "Logged in successfully.",
-        user: syncedUser,
-      };
+      return completeAuth(response, "Logged in successfully.");
     } catch (error: unknown) {
       return {
         ok: false,
         message: toAuthErrorMessage(error, "Unable to log in."),
+      };
+    }
+  }
+
+  async function quickLogin(input: RegisterInput): Promise<AuthResult> {
+    const normalizedEmail = normalizeEmail(input.email);
+
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      return { ok: false, message: "Please provide a valid email address." };
+    }
+
+    if (input.password.length < PASSWORD_MIN_LENGTH) {
+      return {
+        ok: false,
+        message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
+      };
+    }
+
+    const normalizedDisplayName = normalizeDisplayName(input.displayName, normalizedEmail);
+
+    try {
+      const response = await loginWithService({
+        email: normalizedEmail,
+        password: input.password,
+      });
+
+      return completeAuth(response, "Logged in successfully.");
+    } catch (error: unknown) {
+      if (!(error instanceof ApiRequestError) || error.status !== 401) {
+        return {
+          ok: false,
+          message: toAuthErrorMessage(error, "Unable to log in."),
+        };
+      }
+    }
+
+    try {
+      const response = await registerWithService({
+        email: normalizedEmail,
+        password: input.password,
+        displayName: normalizedDisplayName,
+      });
+
+      return completeAuth(response, "Account created and logged in.");
+    } catch (error: unknown) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        try {
+          const response = await loginWithService({
+            email: normalizedEmail,
+            password: input.password,
+          });
+
+          return completeAuth(response, "Logged in successfully.");
+        } catch (retryError: unknown) {
+          return {
+            ok: false,
+            message: toAuthErrorMessage(retryError, "Unable to log in."),
+          };
+        }
+      }
+
+      return {
+        ok: false,
+        message: toAuthErrorMessage(error, "Unable to create account."),
       };
     }
   }
@@ -273,14 +343,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         displayName: normalizeDisplayName(input.displayName, normalizedEmail),
       });
 
-      const syncedUser = syncUserFromService(response.user);
-      setSessionFromUser(syncedUser, response.session.loggedInAt);
-
-      return {
-        ok: true,
-        message: response.message ?? "Account created and logged in.",
-        user: syncedUser,
-      };
+      return completeAuth(response, "Account created and logged in.");
     } catch (error: unknown) {
       return {
         ok: false,
@@ -340,6 +403,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   function recordGameResult(result: GameResult): void {
+    updateJSON<GameResult[]>(STORAGE_KEYS.results, [], (currentResults) => {
+      if (currentResults.some((existingResult) => existingResult.id === result.id)) {
+        return currentResults;
+      }
+
+      return [result, ...currentResults];
+    });
+
+    if (!session) {
+      return;
+    }
+
     void saveResultToService(result)
       .then(() => fetchCurrentUser())
       .then((response) => {
@@ -350,19 +425,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // Local persistence remains as a fallback when the network is unavailable.
       });
 
-    updateJSON<GameResult[]>(STORAGE_KEYS.results, [], (currentResults) => {
-      if (currentResults.some((existingResult) => existingResult.id === result.id)) {
-        return currentResults;
-      }
-
-      return [result, ...currentResults];
-    });
-
-    void fetchResultsFromService().then((response) => {
-      writeJSON(STORAGE_KEYS.results, response.results);
-    }).catch(() => {
-      // Ignore sync errors and keep local state.
-    });
+    void fetchResultsFromService()
+      .then((response) => {
+        writeJSON(STORAGE_KEYS.results, response.results);
+      })
+      .catch(() => {
+        // Ignore sync errors and keep local state.
+      });
   }
 
   const value: AuthContextValue = {
@@ -371,6 +440,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     isAuthenticated: Boolean(user && session),
     isAuthLoading,
     login,
+    quickLogin,
     register,
     logout,
     updateProfile,
