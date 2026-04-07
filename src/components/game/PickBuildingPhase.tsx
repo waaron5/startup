@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { isLeader } from "../../lib/gameEngine";
-import { BUILDINGS } from "../../constants/buildings";
+import { BUILDINGS, BUILDINGS_BY_ID } from "../../constants/buildings";
+import GameBoard from "./GameBoard";
 import PhaseTimer from "./PhaseTimer";
 
 type PickBuildingPhaseProps = {
@@ -19,7 +20,7 @@ export default function PickBuildingPhase({ state, myUserId }: PickBuildingPhase
   const leaderName = state.players.find((p) => p.userId === state.leaderId)?.displayName ?? "Leader";
 
   const availableBuildings = BUILDINGS.filter((b) => !state.spentBuildingIds.includes(b.id));
-  const spentBuildings = BUILDINGS.filter((b) => state.spentBuildingIds.includes(b.id));
+  const pendingLabel = pending ? BUILDINGS_BY_ID[pending]?.label ?? pending : null;
 
   async function handleSelect(buildingId: string) {
     if (pending) return;
@@ -50,33 +51,38 @@ export default function PickBuildingPhase({ state, myUserId }: PickBuildingPhase
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <div className="flex flex-col gap-2">
-        <p className="text-xs text-text-muted uppercase tracking-wide mb-1">Available</p>
-        {availableBuildings.map((b) => (
-          <button
-            className={`card w-full text-left transition-colors ${
-              amLeader
-                ? "hover:border-primary cursor-pointer"
-                : "opacity-70 cursor-default"
-            } ${pending === b.id ? "border-primary opacity-80" : ""}`}
-            disabled={!amLeader || pending !== null}
-            key={b.id}
-            onClick={() => amLeader && handleSelect(b.id)}
-            type="button"
-          >
-            <span className="font-medium text-text">{b.label}</span>
-          </button>
-        ))}
+      <GameBoard
+        clickableBuildingIds={availableBuildings.map((building) => building.id)}
+        className="p-2"
+        disabled={!amLeader || pending !== null}
+        onSelect={handleSelect}
+        selectedBuildingId={pending}
+        spentBuildingIds={state.spentBuildingIds}
+      />
 
-        {spentBuildings.length > 0 && (
-          <>
-            <p className="text-xs text-text-muted uppercase tracking-wide mt-2 mb-1">Spent</p>
-            {spentBuildings.map((b) => (
-              <div className="card w-full opacity-40 line-through text-text-muted" key={b.id}>
-                {b.label}
-              </div>
-            ))}
-          </>
+      <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] uppercase tracking-[0.24em] text-text-muted">
+        <span className="rounded-full border border-[#9edcff] bg-[#18445b] px-3 py-1 text-[#eef8ff]">
+          Clickable
+        </span>
+        <span className="rounded-full border border-[#fff4d3] bg-[#f2c97d] px-3 py-1 text-[#0f2430]">
+          Selected
+        </span>
+        <span className="rounded-full border border-[#53697a] bg-[#173041] px-3 py-1 text-[#8ca2b2]">
+          Spent
+        </span>
+      </div>
+
+      <div className="text-center text-sm text-text-muted">
+        {amLeader ? (
+          pendingLabel ? (
+            <p>
+              Locking in <span className="text-text font-medium">{pendingLabel}</span>...
+            </p>
+          ) : (
+            <p>Tap a glowing location on the board to choose the next target.</p>
+          )
+        ) : (
+          <p>Track spent districts on the board while the leader chooses the next target.</p>
         )}
       </div>
     </div>

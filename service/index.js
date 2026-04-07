@@ -331,8 +331,15 @@ function createDevBotUser(roomCode, index) {
 }
 
 function getNextLeaderId(players, currentLeaderId) {
-  const idx = players.findIndex((p) => p.userId === currentLeaderId);
-  return players[(idx + 1) % players.length].userId;
+  const eligibleLeaders = players.filter((player) => !isDevBotUserId(player.userId));
+  const leaderPool = eligibleLeaders.length > 0 ? eligibleLeaders : players;
+  const idx = leaderPool.findIndex((player) => player.userId === currentLeaderId);
+
+  if (idx === -1) {
+    return leaderPool[0]?.userId ?? players[0]?.userId ?? "";
+  }
+
+  return leaderPool[(idx + 1) % leaderPool.length].userId;
 }
 
 function buildOperationRecord(game, outcome, cleanCount, sabotageCount) {
@@ -724,7 +731,12 @@ async function advanceFromHeistResult(roomCode) {
   try {
     const game = await database.getGameByRoomCode(roomCode);
     if (!game || game.phase !== "heist_result") return;
-    const next = { ...advanceToNextOperation(game), heistReveal: null, pendingNextPhase: null };
+    let next = { ...advanceToNextOperation(game), heistReveal: null, pendingNextPhase: null };
+
+    if (next.phase === "final_accusation") {
+      next = await applyDevBotAccusations(roomCode, next);
+    }
+
     scheduleNextPhaseTimeout(next, roomCode);
     await database.updateGameByRoomCode(roomCode, next);
     io.to(roomCode).emit("game:state", buildClientState(next));
@@ -827,6 +839,44 @@ async function applyDevBotHeistCards(roomCode, game) {
   return next;
 }
 
+async function applyDevBotAccusations(roomCode, game) {
+  if (!isDevelopmentMode() || game.phase !== "final_accusation") {
+    return game;
+  }
+
+  let next = game;
+
+  for (const botUserId of getDevBotPlayerIds(next)) {
+    if (next.accusationVotes?.[botUserId]) {
+      continue;
+    }
+
+    const accusationTarget = next.quislingId;
+
+    if (!accusationTarget || accusationTarget === botUserId) {
+      continue;
+    }
+
+    const updated = await database.atomicSetGameField(
+      roomCode,
+      "final_accusation",
+      "accusationVotes",
+      botUserId,
+      accusationTarget
+    );
+
+    if (updated) {
+      next = updated;
+    }
+  }
+
+  if (Object.keys(next.accusationVotes || {}).length >= next.players.length) {
+    next = applyAccusationTally(next);
+  }
+
+  return next;
+}
+
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 
 function parseCookies(cookieHeader) {
@@ -868,10 +918,16 @@ io.on("connection", (socket) => {
 
       const advanced = await applyLazyTimeout(game);
       if (advanced) {
-        const { _id, ...updates } = advanced;
+        let next = advanced;
+
+        if (next.phase === "final_accusation") {
+          next = await applyDevBotAccusations(roomCode, next);
+        }
+
+        const { _id, ...updates } = next;
         await database.updateGameByRoomCode(roomCode, updates);
-        io.to(roomCode).emit("game:state", buildClientState(advanced));
-        scheduleNextPhaseTimeout(advanced, roomCode);
+        io.to(roomCode).emit("game:state", buildClientState(next));
+        scheduleNextPhaseTimeout(next, roomCode);
       } else {
         socket.emit("game:state", buildClientState(game));
       }
@@ -1634,10 +1690,16 @@ app.get("/api/games/:roomCode", requireAuth, async (req, res) => {
     // Lazy timeout: if deadline has passed, advance phase
     const advanced = await applyLazyTimeout(game);
     if (advanced) {
-      await database.updateGameByRoomCode(roomCode, advanced);
-      io.to(roomCode).emit("game:state", buildClientState(advanced));
-      scheduleNextPhaseTimeout(advanced, roomCode);
-      game = advanced;
+      let next = advanced;
+
+      if (next.phase === "final_accusation") {
+        next = await applyDevBotAccusations(roomCode, next);
+      }
+
+      await database.updateGameByRoomCode(roomCode, next);
+      io.to(roomCode).emit("game:state", buildClientState(next));
+      scheduleNextPhaseTimeout(next, roomCode);
+      game = next;
     }
 
     res.status(200).json({ ok: true, gameState: buildClientState(game) });
