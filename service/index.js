@@ -242,12 +242,14 @@ const ALARM_WIN = 3;
 const MAX_REJECTED_PLANS = 3;
 const MAX_OPERATIONS = 5;
 const RESULT_DISPLAY_MS = 3000;
+const GAME_TIMER_MS = 20 * 60 * 1000; // 20 minutes — full game timer shown to players
 const PHASE_TIMERS_MS = {
-  pick_building: 20000,
-  propose_team: 20000,
-  vote: 15000,
-  submit_heist: 15000,
-  final_accusation: 20000,
+  // Internal auto-advance guards only — never displayed to players
+  pick_building: 120000,
+  propose_team: 180000,
+  vote: 90000,
+  submit_heist: 60000,
+  final_accusation: 180000,
 };
 const DEV_BOT_ID_PREFIX = "devbot_";
 
@@ -286,6 +288,7 @@ function buildClientState(game) {
     spentBuildingIds: game.spentBuildingIds || [],
     selectedBuildingId: game.selectedBuildingId || null,
     phaseDeadline: game.phaseDeadline || null,
+    gameDeadline: game.gameDeadline || null,
     operationHistory: game.operationHistory || [],
     readyPlayerIds: game.readyPlayerIds || [],
     voteReveal: game.voteReveal || null,
@@ -508,8 +511,34 @@ function applyAccusationTally(game) {
   };
 }
 
+// Scheduled game-over timeout when the full 20-minute game timer expires
+function scheduleGameTimeout(roomCode, delayMs) {
+  const key = `${roomCode}:game_timer`;
+  clearTimeout(scheduledTimeouts.get(key));
+
+  const timeoutId = setTimeout(async () => {
+    scheduledTimeouts.delete(key);
+    try {
+      const game = await database.getGameByRoomCode(roomCode);
+      if (!game || game.phase === "game_over") return;
+      const next = applyGameOver(game, "quisling");
+      await database.updateGameByRoomCode(roomCode, next);
+      io.to(roomCode).emit("game:state", buildClientState(next));
+    } catch (err) {
+      console.error(`Game timer expiry error for ${roomCode}:`, err);
+    }
+  }, delayMs);
+
+  scheduledTimeouts.set(key, timeoutId);
+}
+
 // Lazy timeout: applied in GET when phaseDeadline is past; returns updated game or null if no change
 async function applyLazyTimeout(game) {
+  // Full game timer expired → quisling wins
+  if (game.gameDeadline && game.gameDeadline <= Date.now() && game.phase !== "game_over") {
+    return applyGameOver(game, "quisling");
+  }
+
   if (!game.phaseDeadline || game.phaseDeadline > Date.now()) {
     return null;
   }
@@ -1760,13 +1789,16 @@ app.post("/api/games/:roomCode/ready", requireAuth, async (req, res) => {
     let next = updated;
 
     if ((next.readyPlayerIds || []).length >= PLAYERS_REQUIRED) {
+      const gameDeadline = Date.now() + GAME_TIMER_MS;
       next = {
         ...next,
         phase: "pick_building",
         phaseDeadline: Date.now() + PHASE_TIMERS_MS.pick_building,
+        gameDeadline,
       };
       await database.updateGameByRoomCode(roomCode, next);
       schedulePhaseTimeout(roomCode, "pick_building", PHASE_TIMERS_MS.pick_building);
+      scheduleGameTimeout(roomCode, GAME_TIMER_MS);
     }
 
     io.to(roomCode).emit("game:state", buildClientState(next));

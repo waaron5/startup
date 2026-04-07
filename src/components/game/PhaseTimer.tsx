@@ -39,7 +39,11 @@ export default function PhaseTimer({ deadline, paused = false }: PhaseTimerProps
   if (remaining === null) return null;
 
   const display = frozenAt ?? remaining;
-  const isUrgent = display <= 15;
+  const totalSeconds = display;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const formatted = `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const isUrgent = display <= 60;
 
   return (
     <div className="shrink-0 flex items-center justify-center py-1">
@@ -48,7 +52,7 @@ export default function PhaseTimer({ deadline, paused = false }: PhaseTimerProps
           paused ? "text-primary animate-pulse" : isUrgent ? "text-danger" : "text-text-muted"
         }`}
       >
-        {paused ? `⏸ ${display}s` : `${display}s`}
+        {paused ? `⏸ ${formatted}` : formatted}
       </span>
     </div>
   );

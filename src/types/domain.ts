@@ -83,6 +83,7 @@ export type ClientGameState = {
   spentBuildingIds: string[];
   selectedBuildingId: string | null;
   phaseDeadline: number | null;
+  gameDeadline: number | null;
   operationHistory: OperationRecord[];
   readyPlayerIds: string[];
   voteReveal: Record<string, VoteChoice> | null;
