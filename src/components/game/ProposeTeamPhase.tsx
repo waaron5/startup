@@ -3,8 +3,6 @@ import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { isLeader, getRequiredTeamSize } from "../../lib/gameEngine";
 import { BUILDINGS_BY_ID } from "../../constants/buildings";
-import GameBoard from "./GameBoard";
-import PhaseTimer from "./PhaseTimer";
 
 type ProposeTeamPhaseProps = {
   state: ClientGameState;
@@ -25,7 +23,11 @@ export default function ProposeTeamPhase({ state, myUserId }: ProposeTeamPhasePr
   function togglePlayer(userId: string) {
     if (!amLeader || pending) return;
     setSelected((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : prev.length < required
+        ? [...prev, userId]
+        : prev
     );
     setError("");
   }
@@ -33,7 +35,7 @@ export default function ProposeTeamPhase({ state, myUserId }: ProposeTeamPhasePr
   async function handlePropose() {
     if (pending) return;
     if (selected.length !== required) {
-      setError(`You must select exactly ${required} player${required !== 1 ? "s" : ""}.`);
+      setError(`Select exactly ${required} crew members.`);
       return;
     }
     setError("");
@@ -46,107 +48,71 @@ export default function ProposeTeamPhase({ state, myUserId }: ProposeTeamPhasePr
     }
   }
 
-  return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-5xl mx-auto w-full">
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-text mb-1">Propose a Team</h2>
-        <p className="text-text-muted text-sm">
-          Operation {state.operationNumber} — Target:{" "}
-          <span className="text-primary font-medium">{buildingLabel}</span>
+  if (!amLeader) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 px-6 py-12 max-w-sm mx-auto w-full text-center">
+        <p className="text-text-muted text-lg">
+          <span className="text-text font-bold">{leaderName}</span> is picking the crew
         </p>
-        <p className="text-text-muted text-sm mt-1">
-          Team size: <span className="font-bold text-text">{required}</span>
-        </p>
+        <div className="flex flex-col gap-1 text-sm text-text-muted">
+          <span>Target: <span className="text-primary font-medium">{buildingLabel}</span></span>
+          <span>Team size: <span className="text-text font-medium">{required}</span></span>
+        </div>
+        <div className="flex gap-1.5 mt-4">
+          <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+          <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+          <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+        </div>
       </div>
+    );
+  }
 
-      {amLeader ? (
-        <p className="text-center text-sm text-primary font-medium">
-          You are the Leader. Choose {required} player{required !== 1 ? "s" : ""} for the team.
+  return (
+    <div className="flex flex-col gap-4 px-4 py-6 max-w-sm mx-auto w-full">
+      <div className="text-center">
+        <p className="text-text-muted text-sm">
+          Target: <span className="text-primary font-medium">{buildingLabel}</span>
         </p>
-      ) : (
-        <p className="text-center text-sm text-text-muted">
-          Waiting for <span className="text-primary font-medium">{leaderName}</span> to propose a team.
+        <p className="text-3xl font-bold text-text mt-2">
+          {selected.length} / {required}
         </p>
-      )}
-
-      <PhaseTimer deadline={state.phaseDeadline} />
+        <p className="text-text-muted text-xs mt-1">crew members selected</p>
+      </div>
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] lg:items-start">
-        <GameBoard
-          className="p-2"
-          highlightedBuildingId={state.selectedBuildingId}
-          spentBuildingIds={state.spentBuildingIds}
-        />
-
-        <div className="flex flex-col gap-4">
-          {amLeader ? (
-            <div className="card text-center">
-              <p className="text-xs uppercase tracking-[0.24em] text-text-muted">
-                Team Selection
-              </p>
-              <p className="mt-2 text-3xl font-bold text-text">
-                {selected.length}/{required}
-              </p>
-              <p className="mt-1 text-sm text-text-muted">
-                Choose {required} players for the operation.
-              </p>
-            </div>
-          ) : (
-            <div className="card text-center">
-              <p className="text-xs uppercase tracking-[0.24em] text-text-muted">
-                Board Status
-              </p>
-              <p className="mt-2 text-sm text-text-muted">
-                The highlighted building is the active target while the leader assembles a team.
-              </p>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2">
-            {state.players.map((p) => {
-              const isSelected = selected.includes(p.userId);
-              return (
-                <button
-                  className={`card w-full text-left transition-colors ${
-                    amLeader ? "cursor-pointer" : "cursor-default opacity-70"
-                  } ${
-                    isSelected
-                      ? "border-primary bg-primary/10 text-text"
-                      : "hover:border-primary/50"
-                  }`}
-                  disabled={!amLeader || pending}
-                  key={p.userId}
-                  onClick={() => togglePlayer(p.userId)}
-                  type="button"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-text">{p.displayName}</span>
-                    {p.userId === state.leaderId && (
-                      <span className="text-xs text-primary uppercase tracking-wide">Leader</span>
-                    )}
-                    {isSelected && amLeader && (
-                      <span className="text-xs text-success font-bold">✓</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {amLeader ? (
+      <div className="flex flex-col gap-2">
+        {state.players.map((p) => {
+          const isSelected = selected.includes(p.userId);
+          return (
             <button
-              className="btn-primary w-full"
-              disabled={selected.length !== required || pending}
-              onClick={handlePropose}
+              className={`w-full rounded-xl border px-4 py-4 text-left transition-all ${
+                isSelected
+                  ? "border-primary bg-primary/15 text-text"
+                  : "border-white/10 bg-panel text-text hover:border-primary/40"
+              }`}
+              disabled={pending}
+              key={p.userId}
+              onClick={() => togglePlayer(p.userId)}
               type="button"
             >
-              {pending ? "Proposing..." : "Propose Team"}
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{p.displayName}</span>
+                {isSelected && <span className="text-primary font-bold text-lg">✓</span>}
+              </div>
             </button>
-          ) : null}
-        </div>
+          );
+        })}
       </div>
+
+      <button
+        className="btn-primary w-full py-4 text-lg mt-2"
+        disabled={selected.length !== required || pending}
+        onClick={handlePropose}
+        type="button"
+      >
+        {pending ? "Sending..." : "Lock In Team"}
+      </button>
     </div>
   );
 }

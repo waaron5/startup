@@ -21,16 +21,16 @@ export default function VoteResultPhase({ state }: VoteResultPhaseProps) {
   return (
     <div className="flex flex-col gap-4 px-4 py-6 max-w-sm mx-auto w-full">
       <div
-        className={`card text-center py-6 border-2 ${
+        className={`card text-center py-8 border-2 animate-result-pop ${
           passed ? "border-success" : "border-danger"
         }`}
       >
         <p
-          className={`text-2xl font-bold ${
+          className={`text-3xl font-bold font-metal tracking-wide ${
             passed ? "text-success" : "text-danger"
           }`}
         >
-          Plan {passed ? "PASSED" : "REJECTED"}
+          {passed ? "PLAN PASSED" : "PLAN REJECTED"}
         </p>
         {!passed && (
           <p className="text-text-muted text-sm mt-2">
@@ -56,8 +56,6 @@ export default function VoteResultPhase({ state }: VoteResultPhaseProps) {
           );
         })}
       </div>
-
-      <p className="text-center text-text-muted text-sm">Next phase starting...</p>
     </div>
   );
 }

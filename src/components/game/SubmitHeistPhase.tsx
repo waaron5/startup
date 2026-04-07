@@ -3,8 +3,6 @@ import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { isOnTeam, hasSubmittedCard } from "../../lib/gameEngine";
 import { BUILDINGS_BY_ID } from "../../constants/buildings";
-import GameBoard from "./GameBoard";
-import PhaseTimer from "./PhaseTimer";
 
 type SubmitHeistPhaseProps = {
   state: ClientGameState;
@@ -21,9 +19,13 @@ export default function SubmitHeistPhase({ state, myUserId, myRole }: SubmitHeis
   const submitted = hasSubmittedCard(state, myUserId);
   const submittedCount = state.heistCardsSubmitted.length;
   const teamSize = (state.proposedTeam ?? []).length;
+  const buildingLabel = BUILDINGS_BY_ID[state.selectedBuildingId ?? ""]?.label ?? "—";
 
-  const teamNames = (state.proposedTeam ?? [])
-    .map((id) => state.players.find((p) => p.userId === id)?.displayName ?? id);
+  const teamMembers = (state.proposedTeam ?? []).map((id) => ({
+    userId: id,
+    name: state.players.find((p) => p.userId === id)?.displayName ?? id,
+    done: state.heistCardsSubmitted.includes(id),
+  }));
 
   async function handleCard(card: "clean" | "sabotage") {
     if (pending || submitted) return;
@@ -38,86 +40,71 @@ export default function SubmitHeistPhase({ state, myUserId, myRole }: SubmitHeis
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-5xl mx-auto w-full">
+    <div className="flex flex-col items-center gap-6 px-4 py-8 max-w-sm mx-auto w-full">
       <div className="text-center">
-        <h2 className="text-xl font-bold text-text mb-1">Heist in Progress</h2>
-        <p className="text-text-muted text-sm">
-          Operation {state.operationNumber} — Target:{" "}
-          <span className="font-medium text-text">{BUILDINGS_BY_ID[state.selectedBuildingId ?? ""]?.label ?? state.selectedBuildingId ?? "—"}</span>
-        </p>
-        <p className="text-xs text-text-muted mt-1">
-          {submittedCount}/{teamSize} cards submitted
-        </p>
+        <p className="text-text-muted text-xs uppercase tracking-widest">Operation {state.operationNumber}</p>
+        <p className="text-primary font-bold text-xl mt-1">{buildingLabel}</p>
+        <p className="text-text-muted text-xs mt-2">{submittedCount}/{teamSize} cards played</p>
       </div>
-
-      <PhaseTimer deadline={state.phaseDeadline} />
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] lg:items-start">
-        <GameBoard
-          className="p-2"
-          highlightedBuildingId={state.selectedBuildingId}
-          spentBuildingIds={state.spentBuildingIds}
-        />
-
-        <div className="flex flex-col gap-4">
-          <div className="card text-center">
-            <p className="text-xs uppercase tracking-[0.24em] text-text-muted">
-              Heist Team
-            </p>
-            <div className="mt-3 flex flex-col gap-1">
-              {teamNames.map((name) => (
-                <span className="text-text font-medium" key={name}>
-                  {name}
-                </span>
+      {onTeam ? (
+        submitted ? (
+          <div className="w-full text-center">
+            <p className="text-success font-medium text-lg">✓ Card played</p>
+            <div className="flex flex-col gap-1.5 mt-6">
+              {teamMembers.map((m) => (
+                <div className="flex items-center justify-between px-2 py-1.5" key={m.userId}>
+                  <span className="text-text text-sm">{m.name}</span>
+                  {m.done ? (
+                    <span className="text-success text-sm">✓</span>
+                  ) : (
+                    <span className="text-text-muted/50 animate-pulse text-sm">•••</span>
+                  )}
+                </div>
               ))}
             </div>
           </div>
-
-          {onTeam ? (
-            submitted ? (
-              <div className="card text-center py-6">
-                <p className="text-text-muted">Card submitted. Waiting for others...</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <p className="text-center text-sm text-text-muted mb-2">
-                  Choose a card to play anonymously:
-                </p>
-                <button
-                  className="btn-primary py-5 text-lg"
-                  disabled={pending}
-                  onClick={() => handleCard("clean")}
-                  type="button"
-                >
-                  CLEAN
-                </button>
-                {myRole === "quisling" && (
-                  <button
-                    className="btn-danger py-5 text-lg"
-                    disabled={pending}
-                    onClick={() => handleCard("sabotage")}
-                    type="button"
-                  >
-                    SABOTAGE
-                  </button>
-                )}
-                {myRole === "crew" && (
-                  <p className="text-center text-xs text-text-muted italic">
-                    Crew members may only play CLEAN cards.
-                  </p>
-                )}
-              </div>
-            )
-          ) : (
-            <div className="card text-center py-6">
-              <p className="text-text-muted">The team is moving on the highlighted location.</p>
-              <p className="text-text-muted text-sm mt-3">Waiting for results...</p>
-            </div>
-          )}
+        ) : (
+          <div className="flex flex-col gap-3 w-full">
+            <button
+              className="btn-primary w-full py-5 text-xl font-bold"
+              disabled={pending}
+              onClick={() => handleCard("clean")}
+              type="button"
+            >
+              CLEAN
+            </button>
+            {myRole === "quisling" && (
+              <button
+                className="btn-danger w-full py-5 text-xl font-bold"
+                disabled={pending}
+                onClick={() => handleCard("sabotage")}
+                type="button"
+              >
+                SABOTAGE
+              </button>
+            )}
+          </div>
+        )
+      ) : (
+        <div className="w-full text-center">
+          <p className="text-text-muted text-lg mb-4">Heist in progress</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {teamMembers.map((m) => (
+              <span className="bg-panel border border-white/10 rounded-lg px-3 py-1.5 text-text text-sm" key={m.userId}>
+                {m.name}
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-1.5 justify-center mt-6">
+            <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

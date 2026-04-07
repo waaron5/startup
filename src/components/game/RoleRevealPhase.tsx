@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { ClientGameState, GameRole } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
-import PhaseTimer from "./PhaseTimer";
 
 type RoleRevealPhaseProps = {
   state: ClientGameState;
@@ -32,7 +31,7 @@ export default function RoleRevealPhase({ state, myRole, myUserId }: RoleRevealP
 
   return (
     <div className="flex flex-col items-center gap-6 px-4 py-8 max-w-sm mx-auto w-full">
-      <div className={`card w-full text-center p-6 border-2 ${isQuisling ? "border-danger" : "border-success/40"}`}>
+      <div className={`card w-full text-center p-6 border-2 animate-card-reveal ${isQuisling ? "border-danger" : "border-success/40"}`}>
         {myRole ? (
           <>
             <p className="text-text-muted text-sm uppercase tracking-widest mb-2">Your Role</p>
@@ -83,12 +82,7 @@ export default function RoleRevealPhase({ state, myRole, myUserId }: RoleRevealP
         )}
 
         <p className="text-text-muted text-sm">{readyCount} / 5 players ready</p>
-        <p className="text-text-muted text-xs text-center">
-          Waiting for everyone to confirm before the game begins.
-        </p>
       </div>
-
-      <PhaseTimer deadline={state.phaseDeadline} />
     </div>
   );
 }

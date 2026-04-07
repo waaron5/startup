@@ -1,10 +1,8 @@
 import { useState } from "react";
 import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
-import { BUILDINGS_BY_ID } from "../../constants/buildings";
 import { hasVoted } from "../../lib/gameEngine";
-import GameBoard from "./GameBoard";
-import PhaseTimer from "./PhaseTimer";
+import { BUILDINGS_BY_ID } from "../../constants/buildings";
 
 type VotePhaseProps = {
   state: ClientGameState;
@@ -17,14 +15,11 @@ export default function VotePhase({ state, myUserId }: VotePhaseProps) {
   const [error, setError] = useState("");
 
   const alreadyVoted = hasVoted(state, myUserId);
-  const voteCount = state.votesSubmitted.length;
-  const totalPlayers = state.players.length;
   const buildingLabel =
-    BUILDINGS_BY_ID[state.selectedBuildingId ?? ""]?.label ?? state.selectedBuildingId ?? "Unknown";
+    BUILDINGS_BY_ID[state.selectedBuildingId ?? ""]?.label ?? "Unknown";
 
   const teamNames = (state.proposedTeam ?? [])
-    .map((id) => state.players.find((p) => p.userId === id)?.displayName ?? id)
-    .join(", ");
+    .map((id) => state.players.find((p) => p.userId === id)?.displayName ?? id);
 
   async function handleVote(choice: "approve" | "reject") {
     if (pending || alreadyVoted) return;
@@ -39,65 +34,60 @@ export default function VotePhase({ state, myUserId }: VotePhaseProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-5xl mx-auto w-full">
+    <div className="flex flex-col items-center gap-6 px-4 py-8 max-w-sm mx-auto w-full">
       <div className="text-center">
-        <h2 className="text-xl font-bold text-text mb-1">Vote on the Team</h2>
-        <p className="text-text-muted text-sm">
-          Proposed team: <span className="font-medium text-text">{teamNames || "—"}</span>
-        </p>
-        <p className="text-xs text-text-muted mt-1">
-          {voteCount}/{totalPlayers} votes submitted
-        </p>
+        <p className="text-text-muted text-sm uppercase tracking-wider mb-3">Team for</p>
+        <p className="text-primary font-bold text-xl">{buildingLabel}</p>
+        <div className="flex flex-wrap justify-center gap-2 mt-3">
+          {teamNames.map((name) => (
+            <span className="bg-panel border border-white/10 rounded-lg px-3 py-1.5 text-text font-medium text-sm" key={name}>
+              {name}
+            </span>
+          ))}
+        </div>
       </div>
-
-      <PhaseTimer deadline={state.phaseDeadline} />
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] lg:items-start">
-        <GameBoard
-          className="p-2"
-          highlightedBuildingId={state.selectedBuildingId}
-          spentBuildingIds={state.spentBuildingIds}
-        />
-
-        <div className="flex flex-col gap-4">
-          <div className="card text-center">
-            <p className="text-xs uppercase tracking-[0.24em] text-text-muted">
-              Active Target
-            </p>
-            <p className="mt-2 text-2xl font-bold text-text">{buildingLabel}</p>
-            <p className="mt-1 text-sm text-text-muted">
-              Approve if you trust this crew to hit the highlighted location.
-            </p>
+      {alreadyVoted ? (
+        <div className="w-full">
+          <p className="text-success text-center font-medium mb-4">✓ Vote locked in</p>
+          <div className="flex flex-col gap-1.5">
+            {state.players.map((p) => {
+              const voted = state.votesSubmitted.includes(p.userId);
+              return (
+                <div className="flex items-center justify-between px-2 py-1.5" key={p.userId}>
+                  <span className="text-text text-sm">{p.displayName}</span>
+                  {voted ? (
+                    <span className="text-success text-sm">✓</span>
+                  ) : (
+                    <span className="text-text-muted/50 animate-pulse text-sm">•••</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {alreadyVoted ? (
-            <div className="card text-center py-6">
-              <p className="text-text-muted">You have voted. Waiting for others...</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <button
-                className="btn-primary py-5 text-lg"
-                disabled={pending}
-                onClick={() => handleVote("approve")}
-                type="button"
-              >
-                APPROVE
-              </button>
-              <button
-                className="btn-danger py-5 text-lg"
-                disabled={pending}
-                onClick={() => handleVote("reject")}
-                type="button"
-              >
-                REJECT
-              </button>
-            </div>
-          )}
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-3 w-full">
+          <button
+            className="btn-primary w-full py-5 text-xl font-bold"
+            disabled={pending}
+            onClick={() => handleVote("approve")}
+            type="button"
+          >
+            APPROVE
+          </button>
+          <button
+            className="btn-danger w-full py-5 text-xl font-bold"
+            disabled={pending}
+            onClick={() => handleVote("reject")}
+            type="button"
+          >
+            REJECT
+          </button>
+        </div>
+      )}
     </div>
   );
 }

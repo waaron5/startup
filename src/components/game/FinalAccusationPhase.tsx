@@ -2,8 +2,6 @@ import { useState } from "react";
 import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { hasAccused } from "../../lib/gameEngine";
-import GameBoard from "./GameBoard";
-import PhaseTimer from "./PhaseTimer";
 
 type FinalAccusationPhaseProps = {
   state: ClientGameState;
@@ -16,9 +14,6 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
   const [error, setError] = useState("");
 
   const alreadyAccused = hasAccused(state, myUserId);
-  const accusedCount = state.accusationVotesSubmitted.length;
-  const totalPlayers = state.players.length;
-
   const suspects = state.players.filter((p) => p.userId !== myUserId);
 
   async function handleAccuse(suspectId: string) {
@@ -34,64 +29,50 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-5xl mx-auto w-full">
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-text mb-1">Final Accusation</h2>
-        <p className="text-text-muted text-sm">
-          3 successful heists. Who is the Quisling?
-        </p>
-        <p className="text-xs text-text-muted mt-1">
-          {accusedCount}/{totalPlayers} accusations submitted
-        </p>
+    <div className="flex flex-col items-center gap-6 px-4 py-8 max-w-sm mx-auto w-full">
+      <div className="text-center animate-pulse-danger rounded-2xl px-6 py-4">
+        <p className="text-danger text-xs uppercase tracking-[0.3em] mb-2">3 Heists Complete</p>
+        <h2 className="text-3xl font-bold font-metal text-danger tracking-wide">
+          WHO IS THE QUISLING?
+        </h2>
       </div>
-
-      <PhaseTimer deadline={state.phaseDeadline} />
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)] lg:items-start">
-        <GameBoard
-          className="p-2"
-          spentBuildingIds={state.spentBuildingIds}
-        />
-
-        <div className="flex flex-col gap-4">
-          <div className="card text-center">
-            <p className="text-xs uppercase tracking-[0.24em] text-text-muted">
-              Board Review
-            </p>
-            <p className="mt-2 text-sm text-text-muted">
-              Review the spent targets and failed operations before making your accusation.
-            </p>
+      {alreadyAccused ? (
+        <div className="w-full">
+          <p className="text-success text-center font-medium mb-4">✓ Accusation locked</p>
+          <div className="flex flex-col gap-1.5">
+            {state.players.map((p) => {
+              const done = state.accusationVotesSubmitted.includes(p.userId);
+              return (
+                <div className="flex items-center justify-between px-2 py-1.5" key={p.userId}>
+                  <span className="text-text text-sm">{p.displayName}</span>
+                  {done ? (
+                    <span className="text-success text-sm">✓</span>
+                  ) : (
+                    <span className="text-text-muted/50 animate-pulse text-sm">•••</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {alreadyAccused ? (
-            <div className="card text-center py-6">
-              <p className="text-text-muted">Accusation submitted. Waiting for others...</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-text-muted mb-1 text-center">
-                Tap a player to accuse them:
-              </p>
-              {suspects.map((p) => (
-                <button
-                  className="card w-full text-left cursor-pointer hover:border-danger/70 transition-colors"
-                  disabled={pending}
-                  key={p.userId}
-                  onClick={() => handleAccuse(p.userId)}
-                  type="button"
-                >
-                  <span className="font-medium text-text">{p.displayName}</span>
-                </button>
-              ))}
-              <p className="text-xs text-text-muted text-center mt-2 italic">
-                The player with the most accusations is revealed. Ties go to the Quisling.
-              </p>
-            </div>
-          )}
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2 w-full">
+          {suspects.map((p) => (
+            <button
+              className="w-full rounded-xl border border-danger/30 bg-danger/5 px-4 py-4 text-left transition-all hover:border-danger hover:bg-danger/10 active:scale-[0.98]"
+              disabled={pending}
+              key={p.userId}
+              onClick={() => handleAccuse(p.userId)}
+              type="button"
+            >
+              <span className="font-medium text-text text-lg">{p.displayName}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

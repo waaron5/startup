@@ -79,9 +79,9 @@ function getBoardColors(status: string) {
     case "clickable":
       return {
         fill: "#2f6f90",
-        fillOpacity: 0.3,
+        fillOpacity: 0.15,
         stroke: "#9edcff",
-        strokeOpacity: 1,
+        strokeOpacity: 0.7,
         labelFill: "#18445b",
         labelStroke: "#6ec7ff",
         labelText: "#eef8ff",
@@ -136,10 +136,11 @@ export default function GameBoard({
   }
 
   return (
-    <div className={`card overflow-hidden p-3 ${className}`.trim()}>
+    <div className={`overflow-hidden ${className}`.trim()}>
       <svg
         aria-label="The Quisling game board"
-        className="h-auto w-full"
+        className="h-full w-full"
+        preserveAspectRatio="xMidYMid meet"
         viewBox={BOARD_VIEW_BOX}
       >
         <defs>
@@ -174,7 +175,6 @@ export default function GameBoard({
           });
           const colors = getBoardColors(status);
           const isClickable = status === "clickable" || status === "selected";
-          const labelRectX = layout.labelX - layout.labelWidth / 2;
 
           return (
             <g
@@ -200,7 +200,7 @@ export default function GameBoard({
                 stroke={colors.stroke}
                 strokeOpacity={colors.strokeOpacity}
                 strokeLinejoin="round"
-                strokeWidth="6"
+                strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
               />
 
@@ -208,42 +208,14 @@ export default function GameBoard({
                 <path
                   d={layout.footprintPath}
                   fill="none"
-                  opacity="0.55"
+                  opacity="0.4"
                   stroke="#0c1b24"
                   strokeDasharray="14 10"
                   strokeLinecap="round"
-                  strokeWidth="10"
+                  strokeWidth="6"
                   vectorEffect="non-scaling-stroke"
                 />
               ) : null}
-
-              {status === "clickable" ? (
-                <circle className="animate-pulse" cx={layout.labelX} cy={layout.labelY - 36} fill={colors.pulseFill} r="7" />
-              ) : null}
-
-              <rect
-                fill={colors.labelFill}
-                opacity={status === "spent" ? 0.92 : 1}
-                rx="18"
-                stroke={colors.labelStroke}
-                strokeWidth="2"
-                x={labelRectX}
-                y={layout.labelY - 16}
-                height="32"
-                width={layout.labelWidth}
-              />
-              <text
-                dominantBaseline="middle"
-                fill={colors.labelText}
-                fontSize="18"
-                fontWeight="700"
-                letterSpacing="0.08em"
-                textAnchor="middle"
-                x={layout.labelX}
-                y={layout.labelY + 1}
-              >
-                {building.label.toUpperCase()}
-              </text>
 
               <path
                 d={layout.footprintPath}

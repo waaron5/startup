@@ -4,7 +4,6 @@ import { useGame } from "../../context/GameContext";
 import { isLeader } from "../../lib/gameEngine";
 import { BUILDINGS, BUILDINGS_BY_ID } from "../../constants/buildings";
 import GameBoard from "./GameBoard";
-import PhaseTimer from "./PhaseTimer";
 
 type PickBuildingPhaseProps = {
   state: ClientGameState;
@@ -20,7 +19,6 @@ export default function PickBuildingPhase({ state, myUserId }: PickBuildingPhase
   const leaderName = state.players.find((p) => p.userId === state.leaderId)?.displayName ?? "Leader";
 
   const availableBuildings = BUILDINGS.filter((b) => !state.spentBuildingIds.includes(b.id));
-  const pendingLabel = pending ? BUILDINGS_BY_ID[pending]?.label ?? pending : null;
 
   async function handleSelect(buildingId: string) {
     if (pending) return;
@@ -35,56 +33,23 @@ export default function PickBuildingPhase({ state, myUserId }: PickBuildingPhase
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-sm mx-auto w-full">
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-text mb-1">Pick a Target Building</h2>
-        {amLeader ? (
-          <p className="text-text-muted text-sm">You are the Leader. Choose the target for Operation {state.operationNumber}.</p>
-        ) : (
-          <p className="text-text-muted text-sm">
-            Waiting for <span className="text-primary font-medium">{leaderName}</span> to choose a building.
-          </p>
-        )}
-      </div>
-
-      <PhaseTimer deadline={state.phaseDeadline} />
-
+    <div className="flex flex-col h-full px-1 py-1 w-full">
       {error && <p className="text-danger text-sm text-center">{error}</p>}
+
+      {!amLeader && (
+        <p className="text-center text-text-muted text-sm py-1">
+          <span className="text-text font-medium">{leaderName}</span> is picking the target
+        </p>
+      )}
 
       <GameBoard
         clickableBuildingIds={availableBuildings.map((building) => building.id)}
-        className="p-2"
+        className="flex-1 min-h-0"
         disabled={!amLeader || pending !== null}
         onSelect={handleSelect}
         selectedBuildingId={pending}
         spentBuildingIds={state.spentBuildingIds}
       />
-
-      <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] uppercase tracking-[0.24em] text-text-muted">
-        <span className="rounded-full border border-[#9edcff] bg-[#18445b] px-3 py-1 text-[#eef8ff]">
-          Clickable
-        </span>
-        <span className="rounded-full border border-[#fff4d3] bg-[#f2c97d] px-3 py-1 text-[#0f2430]">
-          Selected
-        </span>
-        <span className="rounded-full border border-[#53697a] bg-[#173041] px-3 py-1 text-[#8ca2b2]">
-          Spent
-        </span>
-      </div>
-
-      <div className="text-center text-sm text-text-muted">
-        {amLeader ? (
-          pendingLabel ? (
-            <p>
-              Locking in <span className="text-text font-medium">{pendingLabel}</span>...
-            </p>
-          ) : (
-            <p>Tap a glowing location on the board to choose the next target.</p>
-          )
-        ) : (
-          <p>Track spent districts on the board while the leader chooses the next target.</p>
-        )}
-      </div>
     </div>
   );
 }

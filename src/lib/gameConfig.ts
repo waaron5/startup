@@ -15,9 +15,9 @@ export const GAME_CONFIG = {
 } as const;
 
 export const PHASE_TIMERS_SECONDS = {
-  pick_building: 20,
-  propose_team: 20,
-  vote: 15,
-  submit_heist: 15,
-  final_accusation: 20,
+  pick_building: 120,
+  propose_team: 180,
+  vote: 120,
+  submit_heist: 90,
+  final_accusation: 180,
 } as const;
