@@ -1,6 +1,7 @@
 import type { GameResult } from "../types/domain";
 import type { GameLobby } from "../types/domain";
 import type { UserStats } from "../types/domain";
+import type { ClientGameState, GameRole } from "../types/domain";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -20,8 +21,6 @@ export type ServiceUser = {
   displayName: string;
   createdAt: string;
   stats: UserStats;
-  friends: string[];
-  history: string[];
 };
 
 export type ServiceAuthResponse = {
@@ -198,5 +197,80 @@ export function updateProfileInService(input: { displayName: string }) {
   return requestJson<ServiceProfileResponse>("/api/profile", {
     method: "PATCH",
     body: JSON.stringify(input),
+  });
+}
+
+// ─── Game API ─────────────────────────────────────────────────────────────────
+
+type ServiceGameStateResponse = {
+  ok: true;
+  gameState: ClientGameState;
+};
+
+type ServiceMyRoleResponse = {
+  ok: true;
+  role: GameRole;
+};
+
+export function startGameInService(roomCode: string) {
+  return requestJson<ServiceGameStateResponse>("/api/games", {
+    method: "POST",
+    body: JSON.stringify({ roomCode }),
+  });
+}
+
+export function fetchGameState(roomCode: string) {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}`);
+}
+
+export function fetchMyRole(roomCode: string) {
+  return requestJson<ServiceMyRoleResponse>(`/api/games/${encodeURIComponent(roomCode)}/myrole`);
+}
+
+export function submitReadyInService(roomCode: string) {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}/ready`, {
+    method: "POST",
+  });
+}
+
+export function selectBuildingInService(roomCode: string, buildingId: string) {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}/select-building`, {
+    method: "POST",
+    body: JSON.stringify({ buildingId }),
+  });
+}
+
+export function proposeTeamInService(roomCode: string, teamUserIds: string[]) {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}/propose-team`, {
+    method: "POST",
+    body: JSON.stringify({ teamUserIds }),
+  });
+}
+
+export function submitVoteInService(roomCode: string, choice: "approve" | "reject") {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}/vote`, {
+    method: "POST",
+    body: JSON.stringify({ choice }),
+  });
+}
+
+export function submitHeistCardInService(roomCode: string, card: "clean" | "sabotage") {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}/submit-card`, {
+    method: "POST",
+    body: JSON.stringify({ card }),
+  });
+}
+
+export function submitAccusationInService(roomCode: string, targetUserId: string) {
+  return requestJson<ServiceGameStateResponse>(`/api/games/${encodeURIComponent(roomCode)}/accuse`, {
+    method: "POST",
+    body: JSON.stringify({ targetUserId }),
+  });
+}
+
+export function saveGameResultToService(result: GameResult) {
+  return requestJson<{ ok: true; message?: string }>("/api/results", {
+    method: "POST",
+    body: JSON.stringify(result),
   });
 }

@@ -1,20 +1,33 @@
-export type GameRole = "Infiltrator" | "Lookout" | "Saboteur" | "Engineer";
-export type GamePhase = "planning" | "action" | "resolution" | "complete";
-export type GameOutcome = "win" | "loss";
+export type GameRole = "crew" | "quisling";
+
+export type GamePhase =
+  | "lobby"
+  | "role_reveal"
+  | "pick_building"
+  | "propose_team"
+  | "vote"
+  | "vote_result"
+  | "submit_heist"
+  | "heist_result"
+  | "final_accusation"
+  | "game_over";
+
+export type HeistCard = "clean" | "sabotage";
+export type VoteChoice = "approve" | "reject";
+export type GameWinner = "crew" | "quisling";
+export type OperationOutcome = "success" | "alarm" | "escalated";
 
 export type UserStats = {
   gamesPlayed: number;
   wins: number;
   losses: number;
   winRate: number;
-  totalScore: number;
-  bestScore: number;
 };
 
 export type UserRecord = {
   id: string;
   email: string;
-  password: string; // Temporary: frontend-only auth scaffold.
+  password: string;
   displayName: string;
   createdAt: string;
   stats: UserStats;
@@ -29,36 +42,63 @@ export type AuthSession = {
   loggedInAt: string;
 };
 
-export type GameSession = {
-  id: string;
-  roomCode: string;
+export type GamePlayer = {
   userId: string;
-  playerName: string;
-  role: GameRole;
+  displayName: string;
+};
+
+export type OperationRecord = {
+  operationNumber: number;
+  buildingId: string;
+  buildingLabel: string;
+  teamUserIds: string[];
+  outcome: OperationOutcome;
+  cleanCount: number;
+  sabotageCount: number;
+};
+
+export type GameResultSummary = {
+  winner: GameWinner;
+  quislingId: string;
+  quislingDisplayName: string;
+  detainedUserId: string;
+  detainedDisplayName: string;
+  operationHistory: OperationRecord[];
+};
+
+export type ClientGameState = {
+  roomCode: string;
   phase: GamePhase;
-  startedAt: string;
-  durationSeconds: number;
-  remainingSeconds: number;
-  turnsPlayed: number;
+  players: GamePlayer[];
+  leaderId: string;
+  operationNumber: number;
+  proposedTeam: string[];
+  votesSubmitted: string[];
+  heistCardsSubmitted: string[];
+  accusationVotesSubmitted: string[];
+  successes: number;
+  alarm: number;
+  rejectedPlans: number;
+  spentBuildingIds: string[];
   selectedBuildingId: string | null;
-  actionLog: string[];
-  score: number;
-  objectiveProgress: number;
-  penalties: number;
+  phaseDeadline: number | null;
+  operationHistory: OperationRecord[];
+  readyPlayerIds: string[];
+  voteReveal: Record<string, VoteChoice> | null;
+  heistReveal: { cleanCount: number; sabotageCount: number; outcome: OperationOutcome } | null;
+  accusationReveal: Record<string, string> | null;
+  result: GameResultSummary | null;
 };
 
 export type GameResult = {
   id: string;
-  gameId: string;
-  userId: string;
   roomCode: string;
-  outcome: GameOutcome;
-  score: number;
-  summary: {
-    buildingsHit: string[];
-    turnsPlayed: number;
-    timeRemaining: number;
-  };
+  userId: string;
+  outcome: "win" | "loss";
+  winner: GameWinner;
+  quislingId: string;
+  quislingDisplayName: string;
+  operationHistory: OperationRecord[];
   completedAt: string;
 };
 

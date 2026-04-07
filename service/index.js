@@ -1,12 +1,18 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const http = require("node:http");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const bcrypt = require("bcrypt");
+const { Server } = require("socket.io");
 const database = require("./database");
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: true, credentials: true },
+});
 const port = Number(process.env.PORT) || 4000;
 const staticDir = path.join(__dirname, "..", "dist");
 const indexFile = path.join(staticDir, "index.html");
@@ -51,46 +57,35 @@ function toPublicUser(user) {
       wins: Number(stats.wins || 0),
       losses: Number(stats.losses || 0),
       winRate: Number(stats.winRate || 0),
-      totalScore: Number(stats.totalScore || 0),
-      bestScore: Number(stats.bestScore || 0),
     },
-    friends: Array.isArray(user.friends) ? user.friends : [],
-    history: Array.isArray(user.history) ? user.history : [],
   };
 }
 
 function toPublicResult(result) {
   return {
     id: result.id,
-    gameId: result.gameId,
-    userId: result.userId,
     roomCode: result.roomCode,
+    userId: result.userId,
     outcome: result.outcome,
-    score: result.score,
-    summary: {
-      buildingsHit: Array.isArray(result.summary?.buildingsHit) ? result.summary.buildingsHit : [],
-      turnsPlayed: Number(result.summary?.turnsPlayed) || 0,
-      timeRemaining: Number(result.summary?.timeRemaining) || 0,
-    },
+    winner: result.winner || null,
+    quislingId: result.quislingId || null,
+    quislingDisplayName: result.quislingDisplayName || null,
+    operationHistory: Array.isArray(result.operationHistory) ? result.operationHistory : [],
     completedAt: result.completedAt,
   };
 }
 
 function parseResultInput(payload, userId) {
   const id = String(payload?.id || "").trim();
-  const gameId = String(payload?.gameId || "").trim();
   const roomCode = String(payload?.roomCode || "").trim().toUpperCase();
   const outcome = payload?.outcome;
-  const score = Number(payload?.score);
   const completedAt = String(payload?.completedAt || "").trim();
-  const summary = payload?.summary || {};
-  const buildingsHit = Array.isArray(summary.buildingsHit)
-    ? summary.buildingsHit.map((entry) => String(entry))
-    : [];
-  const turnsPlayed = Number(summary.turnsPlayed);
-  const timeRemaining = Number(summary.timeRemaining);
+  const winner = payload?.winner;
+  const quislingId = String(payload?.quislingId || "").trim();
+  const quislingDisplayName = String(payload?.quislingDisplayName || "").trim();
+  const operationHistory = Array.isArray(payload?.operationHistory) ? payload.operationHistory : [];
 
-  if (!id || !gameId || !roomCode || !completedAt) {
+  if (!id || !roomCode || !completedAt) {
     return null;
   }
 
@@ -98,22 +93,19 @@ function parseResultInput(payload, userId) {
     return null;
   }
 
-  if (!Number.isFinite(score) || !Number.isFinite(turnsPlayed) || !Number.isFinite(timeRemaining)) {
+  if (!(winner === "crew" || winner === "quisling")) {
     return null;
   }
 
   return {
     id,
-    gameId,
-    userId,
     roomCode,
+    userId,
     outcome,
-    score,
-    summary: {
-      buildingsHit,
-      turnsPlayed,
-      timeRemaining,
-    },
+    winner,
+    quislingId,
+    quislingDisplayName,
+    operationHistory,
     completedAt,
   };
 }
@@ -200,6 +192,487 @@ async function requireAuth(req, res, next) {
   next();
 }
 
+// ─── Game Config ─────────────────────────────────────────────────────────────
+
+const OPERATION_TEAM_SIZES = { 1: 2, 2: 3, 3: 2, 4: 3, 5: 3 };
+const PLAYERS_REQUIRED = 5;
+const SUCCESS_WIN = 3;
+const ALARM_WIN = 3;
+const MAX_REJECTED_PLANS = 3;
+const MAX_OPERATIONS = 5;
+const RESULT_DISPLAY_MS = 3000;
+const PHASE_TIMERS_MS = {
+  pick_building: 20000,
+  propose_team: 20000,
+  vote: 15000,
+  submit_heist: 15000,
+  final_accusation: 20000,
+};
+
+// In-memory map to avoid duplicate scheduled timeouts: key = `${roomCode}:${phase}`
+const scheduledTimeouts = new Map();
+
+// ─── Game Helpers ─────────────────────────────────────────────────────────────
+
+function getBuildingLabel(buildingId) {
+  const labels = {
+    "bank-vault": "Bank Vault",
+    watchtower: "Watchtower",
+    archives: "Archives",
+    armory: "Armory",
+    docks: "Docks",
+    "radio-tower": "Radio Tower",
+  };
+  return labels[buildingId] ?? buildingId;
+}
+
+function buildClientState(game) {
+  const isGameOver = game.phase === "game_over";
+  return {
+    roomCode: game.roomCode,
+    phase: game.phase,
+    players: game.players,
+    leaderId: game.leaderId,
+    operationNumber: game.operationNumber,
+    proposedTeam: game.proposedTeam || [],
+    votesSubmitted: Object.keys(game.votes || {}),
+    heistCardsSubmitted: Object.keys(game.heistCards || {}),
+    accusationVotesSubmitted: Object.keys(game.accusationVotes || {}),
+    successes: game.successes,
+    alarm: game.alarm,
+    rejectedPlans: game.rejectedPlans,
+    spentBuildingIds: game.spentBuildingIds || [],
+    selectedBuildingId: game.selectedBuildingId || null,
+    phaseDeadline: game.phaseDeadline || null,
+    operationHistory: game.operationHistory || [],
+    readyPlayerIds: game.readyPlayerIds || [],
+    voteReveal: game.voteReveal || null,
+    heistReveal: game.heistReveal || null,
+    accusationReveal: isGameOver ? (game.accusationVotes || {}) : null,
+    result: isGameOver ? game.result : null,
+  };
+}
+
+function getNextLeaderId(players, currentLeaderId) {
+  const idx = players.findIndex((p) => p.userId === currentLeaderId);
+  return players[(idx + 1) % players.length].userId;
+}
+
+function buildOperationRecord(game, outcome, cleanCount, sabotageCount) {
+  return {
+    operationNumber: game.operationNumber,
+    buildingId: game.selectedBuildingId || "",
+    buildingLabel: getBuildingLabel(game.selectedBuildingId || ""),
+    teamUserIds: game.proposedTeam || [],
+    outcome,
+    cleanCount,
+    sabotageCount,
+  };
+}
+
+function applyGameOver(game, winner) {
+  const quislingPlayer = game.players.find((p) => p.userId === game.quislingId);
+  return {
+    ...game,
+    phase: "game_over",
+    phaseDeadline: null,
+    pendingNextPhase: null,
+    result: {
+      winner,
+      quislingId: game.quislingId,
+      quislingDisplayName: quislingPlayer ? quislingPlayer.displayName : "Unknown",
+      detainedUserId: game.detainedUserId || "",
+      detainedDisplayName: game.detainedDisplayName || "",
+      operationHistory: game.operationHistory || [],
+    },
+  };
+}
+
+function advanceToNextOperation(game) {
+  if (game.alarm >= ALARM_WIN) {
+    return applyGameOver(game, "quisling");
+  }
+
+  if (game.successes >= SUCCESS_WIN) {
+    return {
+      ...game,
+      phase: "final_accusation",
+      accusationVotes: {},
+      phaseDeadline: Date.now() + PHASE_TIMERS_MS.final_accusation,
+      selectedBuildingId: null,
+      proposedTeam: [],
+      votes: {},
+      heistCards: {},
+      heistReveal: null,
+      voteReveal: null,
+      pendingNextPhase: null,
+      rejectedPlans: 0,
+    };
+  }
+
+  const nextOpNumber = game.operationNumber + 1;
+
+  if (nextOpNumber > MAX_OPERATIONS) {
+    return applyGameOver(game, "quisling");
+  }
+
+  const nextLeaderId = getNextLeaderId(game.players, game.leaderId);
+
+  return {
+    ...game,
+    phase: "pick_building",
+    operationNumber: nextOpNumber,
+    leaderId: nextLeaderId,
+    selectedBuildingId: null,
+    proposedTeam: [],
+    votes: {},
+    heistCards: {},
+    heistReveal: null,
+    voteReveal: null,
+    rejectedPlans: 0,
+    pendingNextPhase: null,
+    phaseDeadline: Date.now() + PHASE_TIMERS_MS.pick_building,
+  };
+}
+
+function applyForcedEscalation(game) {
+  let nextGame = {
+    ...game,
+    alarm: game.alarm + 1,
+    rejectedPlans: 0,
+    voteReveal: null,
+    pendingNextPhase: null,
+  };
+
+  if (game.selectedBuildingId && !nextGame.spentBuildingIds.includes(game.selectedBuildingId)) {
+    nextGame.spentBuildingIds = [...nextGame.spentBuildingIds, game.selectedBuildingId];
+    nextGame.operationHistory = [...nextGame.operationHistory, buildOperationRecord(game, "escalated", 0, 0)];
+  }
+
+  return advanceToNextOperation(nextGame);
+}
+
+function resolveVotes(game) {
+  const votes = game.votes;
+  const approveCount = Object.values(votes).filter((v) => v === "approve").length;
+  const passed = approveCount >= 3;
+
+  let nextRejectedPlans = game.rejectedPlans;
+  let nextLeaderId = game.leaderId;
+  let pendingNextPhase;
+
+  if (passed) {
+    pendingNextPhase = "submit_heist";
+  } else {
+    nextRejectedPlans = game.rejectedPlans + 1;
+    if (nextRejectedPlans >= MAX_REJECTED_PLANS) {
+      pendingNextPhase = "forced_escalation";
+    } else {
+      pendingNextPhase = "propose_team";
+      nextLeaderId = getNextLeaderId(game.players, game.leaderId);
+    }
+  }
+
+  return {
+    ...game,
+    votes,
+    voteReveal: { ...votes },
+    phase: "vote_result",
+    phaseDeadline: Date.now() + RESULT_DISPLAY_MS,
+    pendingNextPhase,
+    rejectedPlans: nextRejectedPlans,
+    leaderId: nextLeaderId,
+  };
+}
+
+function applyAccusationTally(game) {
+  const accusationVotes = game.accusationVotes || {};
+  const tally = {};
+
+  for (const targetId of Object.values(accusationVotes)) {
+    tally[targetId] = (tally[targetId] || 0) + 1;
+  }
+
+  if (Object.keys(tally).length === 0) {
+    return applyGameOver(game, "quisling");
+  }
+
+  const maxVotes = Math.max(...Object.values(tally));
+  const topCandidates = Object.keys(tally).filter((id) => tally[id] === maxVotes);
+
+  // Tie → quisling wins
+  if (topCandidates.length > 1) {
+    return applyGameOver(game, "quisling");
+  }
+
+  const detainedId = topCandidates[0];
+  const detainedPlayer = game.players.find((p) => p.userId === detainedId);
+  const winner = detainedId === game.quislingId ? "crew" : "quisling";
+
+  return {
+    ...applyGameOver(game, winner),
+    detainedUserId: detainedId,
+    detainedDisplayName: detainedPlayer ? detainedPlayer.displayName : "Unknown",
+    result: {
+      winner,
+      quislingId: game.quislingId,
+      quislingDisplayName: game.players.find((p) => p.userId === game.quislingId)?.displayName ?? "Unknown",
+      detainedUserId: detainedId,
+      detainedDisplayName: detainedPlayer ? detainedPlayer.displayName : "Unknown",
+      operationHistory: game.operationHistory || [],
+    },
+  };
+}
+
+// Lazy timeout: applied in GET when phaseDeadline is past; returns updated game or null if no change
+async function applyLazyTimeout(game) {
+  if (!game.phaseDeadline || game.phaseDeadline > Date.now()) {
+    return null;
+  }
+
+  const now = Date.now();
+
+  switch (game.phase) {
+    case "pick_building": {
+      let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
+      next.leaderId = getNextLeaderId(game.players, game.leaderId);
+      if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
+        return applyForcedEscalation(next);
+      }
+      return {
+        ...next,
+        phase: "pick_building",
+        selectedBuildingId: null,
+        phaseDeadline: now + PHASE_TIMERS_MS.pick_building,
+      };
+    }
+
+    case "propose_team": {
+      let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
+      next.leaderId = getNextLeaderId(game.players, game.leaderId);
+      if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
+        return applyForcedEscalation(next);
+      }
+      return {
+        ...next,
+        phase: "propose_team",
+        proposedTeam: [],
+        phaseDeadline: now + PHASE_TIMERS_MS.propose_team,
+      };
+    }
+
+    case "vote": {
+      const votes = { ...game.votes };
+      for (const p of game.players) {
+        if (!votes[p.userId]) votes[p.userId] = "reject";
+      }
+      return resolveVotes({ ...game, votes });
+    }
+
+    case "submit_heist": {
+      const cleanCount = Object.values(game.heistCards || {}).filter((c) => c === "clean").length;
+      const sabotageCount = Object.values(game.heistCards || {}).filter((c) => c === "sabotage").length;
+      let next = {
+        ...game,
+        alarm: game.alarm + 1,
+        spentBuildingIds: game.selectedBuildingId
+          ? [...(game.spentBuildingIds || []), game.selectedBuildingId]
+          : game.spentBuildingIds || [],
+        operationHistory: [
+          ...(game.operationHistory || []),
+          buildOperationRecord(game, "alarm", cleanCount, sabotageCount),
+        ],
+        heistReveal: { cleanCount, sabotageCount, outcome: "alarm" },
+        phase: "heist_result",
+        phaseDeadline: null,
+        pendingNextPhase: "next_operation",
+      };
+      return next;
+    }
+
+    case "final_accusation": {
+      return applyAccusationTally(game);
+    }
+
+    case "vote_result": {
+      if (game.pendingNextPhase === "submit_heist") {
+        return { ...game, phase: "submit_heist", heistCards: {}, phaseDeadline: now + PHASE_TIMERS_MS.submit_heist, voteReveal: null, pendingNextPhase: null };
+      }
+      if (game.pendingNextPhase === "propose_team") {
+        return { ...game, phase: "propose_team", proposedTeam: [], phaseDeadline: now + PHASE_TIMERS_MS.propose_team, voteReveal: null, pendingNextPhase: null };
+      }
+      if (game.pendingNextPhase === "forced_escalation") {
+        return applyForcedEscalation(game);
+      }
+      return null;
+    }
+
+    case "heist_result": {
+      const next = advanceToNextOperation(game);
+      return { ...next, heistReveal: null, pendingNextPhase: null };
+    }
+
+    default:
+      return null;
+  }
+}
+
+// Server-side scheduled timeouts (fires independently of client requests)
+function schedulePhaseTimeout(roomCode, phase, delayMs) {
+  const key = `${roomCode}:${phase}`;
+  clearTimeout(scheduledTimeouts.get(key));
+
+  const timeoutId = setTimeout(async () => {
+    scheduledTimeouts.delete(key);
+    try {
+      const game = await database.getGameByRoomCode(roomCode);
+      if (!game || game.phase !== phase) return;
+      await handleServerPhaseTimeout(game, roomCode);
+    } catch (err) {
+      console.error(`Phase timeout error for ${roomCode}:${phase}:`, err);
+    }
+  }, delayMs);
+
+  scheduledTimeouts.set(key, timeoutId);
+}
+
+async function handleServerPhaseTimeout(game, roomCode) {
+  const now = Date.now();
+
+  if (game.phase === "pick_building") {
+    let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
+    next.leaderId = getNextLeaderId(game.players, game.leaderId);
+    if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
+      next = applyForcedEscalation(next);
+    } else {
+      next = { ...next, phase: "pick_building", selectedBuildingId: null, phaseDeadline: now + PHASE_TIMERS_MS.pick_building };
+      schedulePhaseTimeout(roomCode, "pick_building", PHASE_TIMERS_MS.pick_building);
+    }
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+    scheduleNextPhaseTimeout(next, roomCode);
+    return;
+  }
+
+  if (game.phase === "propose_team") {
+    let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
+    next.leaderId = getNextLeaderId(game.players, game.leaderId);
+    if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
+      next = applyForcedEscalation(next);
+    } else {
+      next = { ...next, phase: "propose_team", proposedTeam: [], phaseDeadline: now + PHASE_TIMERS_MS.propose_team };
+      schedulePhaseTimeout(roomCode, "propose_team", PHASE_TIMERS_MS.propose_team);
+    }
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+    scheduleNextPhaseTimeout(next, roomCode);
+    return;
+  }
+
+  if (game.phase === "vote") {
+    const votes = { ...game.votes };
+    for (const p of game.players) {
+      if (!votes[p.userId]) votes[p.userId] = "reject";
+    }
+    const next = resolveVotes({ ...game, votes });
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+    setTimeout(() => advanceFromVoteResult(roomCode), RESULT_DISPLAY_MS);
+    return;
+  }
+
+  if (game.phase === "submit_heist") {
+    const cleanCount = Object.values(game.heistCards || {}).filter((c) => c === "clean").length;
+    const sabotageCount = Object.values(game.heistCards || {}).filter((c) => c === "sabotage").length;
+    const next = {
+      ...game,
+      alarm: game.alarm + 1,
+      spentBuildingIds: game.selectedBuildingId ? [...(game.spentBuildingIds || []), game.selectedBuildingId] : game.spentBuildingIds || [],
+      operationHistory: [...(game.operationHistory || []), buildOperationRecord(game, "alarm", cleanCount, sabotageCount)],
+      heistReveal: { cleanCount, sabotageCount, outcome: "alarm" },
+      phase: "heist_result",
+      phaseDeadline: null,
+      pendingNextPhase: "next_operation",
+    };
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+    setTimeout(() => advanceFromHeistResult(roomCode), RESULT_DISPLAY_MS);
+    return;
+  }
+
+  if (game.phase === "final_accusation") {
+    const next = applyAccusationTally(game);
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+    return;
+  }
+}
+
+async function advanceFromVoteResult(roomCode) {
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+    if (!game || game.phase !== "vote_result") return;
+    const now = Date.now();
+    let next;
+
+    if (game.pendingNextPhase === "submit_heist") {
+      next = { ...game, phase: "submit_heist", heistCards: {}, phaseDeadline: now + PHASE_TIMERS_MS.submit_heist, voteReveal: null, pendingNextPhase: null };
+      schedulePhaseTimeout(roomCode, "submit_heist", PHASE_TIMERS_MS.submit_heist);
+    } else if (game.pendingNextPhase === "propose_team") {
+      next = { ...game, phase: "propose_team", proposedTeam: [], phaseDeadline: now + PHASE_TIMERS_MS.propose_team, voteReveal: null, pendingNextPhase: null };
+      schedulePhaseTimeout(roomCode, "propose_team", PHASE_TIMERS_MS.propose_team);
+    } else if (game.pendingNextPhase === "forced_escalation") {
+      next = applyForcedEscalation(game);
+      scheduleNextPhaseTimeout(next, roomCode);
+    } else {
+      return;
+    }
+
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+  } catch (err) {
+    console.error(`advanceFromVoteResult error for ${roomCode}:`, err);
+  }
+}
+
+async function advanceFromHeistResult(roomCode) {
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+    if (!game || game.phase !== "heist_result") return;
+    const next = { ...advanceToNextOperation(game), heistReveal: null, pendingNextPhase: null };
+    scheduleNextPhaseTimeout(next, roomCode);
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+  } catch (err) {
+    console.error(`advanceFromHeistResult error for ${roomCode}:`, err);
+  }
+}
+
+function scheduleNextPhaseTimeout(game, roomCode) {
+  if (!game.phaseDeadline) return;
+  const delay = Math.max(0, game.phaseDeadline - Date.now());
+  if (["pick_building", "propose_team", "vote", "submit_heist", "final_accusation"].includes(game.phase)) {
+    schedulePhaseTimeout(roomCode, game.phase, delay);
+  }
+}
+
+// ─── Socket.IO ────────────────────────────────────────────────────────────────
+
+io.on("connection", (socket) => {
+  socket.on("game:join", async ({ roomCode }) => {
+    if (!roomCode) return;
+    socket.join(roomCode);
+    try {
+      const game = await database.getGameByRoomCode(roomCode);
+      if (game) {
+        socket.emit("game:state", buildClientState(game));
+      }
+    } catch {
+      // Non-fatal: client will fetch via REST
+    }
+  });
+});
+
 app.get("/api/health", (_req, res) => {
   res.status(200).json({
     ok: true,
@@ -251,8 +724,6 @@ app.post("/api/auth/register", async (req, res) => {
         wins: 0,
         losses: 0,
         winRate: 0,
-        totalScore: 0,
-        bestScore: 0,
       },
       friends: [],
       history: [],
@@ -736,6 +1207,517 @@ app.post("/api/lobbies/:roomCode/reopen", requireAuth, async (req, res) => {
   }
 });
 
+// ─── Game Endpoints ───────────────────────────────────────────────────────────
+
+// POST /api/games — Host starts the game for a lobby
+app.post("/api/games", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.body?.roomCode);
+
+  if (!/^[A-Z]{4}$/.test(roomCode)) {
+    res.status(400).json({ ok: false, message: "Room code must be 4 letters." });
+    return;
+  }
+
+  try {
+    const lobby = await database.getLobbyByRoomCode(roomCode);
+
+    if (!lobby) {
+      res.status(404).json({ ok: false, message: "Lobby not found." });
+      return;
+    }
+
+    if (lobby.hostUserId !== user.id) {
+      res.status(403).json({ ok: false, message: "Only the host can start the game." });
+      return;
+    }
+
+    const playerIds = Array.isArray(lobby.players) ? lobby.players : [];
+
+    if (playerIds.length !== PLAYERS_REQUIRED) {
+      res.status(400).json({ ok: false, message: `Exactly ${PLAYERS_REQUIRED} players are required to start.` });
+      return;
+    }
+
+    // Check if a game already exists for this room
+    const existingGame = await database.getGameByRoomCode(roomCode);
+    if (existingGame && existingGame.phase !== "game_over") {
+      res.status(409).json({ ok: false, message: "A game is already in progress for this room." });
+      return;
+    }
+
+    // Fetch player display names
+    const players = [];
+    for (const uid of playerIds) {
+      const u = await database.findUserById(uid);
+      players.push({ userId: uid, displayName: u ? u.displayName : uid });
+    }
+
+    // Assign roles: 1 quisling, 4 crew — randomly
+    const shuffled = [...players].sort(() => Math.random() - 0.5);
+    const quislingId = shuffled[0].userId;
+
+    // Random first leader
+    const leaderId = players[Math.floor(Math.random() * players.length)].userId;
+
+    const gameDoc = {
+      roomCode,
+      phase: "role_reveal",
+      players,
+      quislingId,
+      leaderId,
+      operationNumber: 1,
+      proposedTeam: [],
+      votes: {},
+      heistCards: {},
+      accusationVotes: {},
+      successes: 0,
+      alarm: 0,
+      rejectedPlans: 0,
+      spentBuildingIds: [],
+      selectedBuildingId: null,
+      phaseDeadline: null,
+      operationHistory: [],
+      readyPlayerIds: [],
+      voteReveal: null,
+      heistReveal: null,
+      pendingNextPhase: null,
+      detainedUserId: null,
+      detainedDisplayName: null,
+      result: null,
+      createdAt: nowIso(),
+    };
+
+    if (existingGame) {
+      await database.updateGameByRoomCode(roomCode, gameDoc);
+    } else {
+      await database.createGame(gameDoc);
+    }
+
+    await database.setLobbyStatusByRoomCode(roomCode, "in_progress", nowIso());
+
+    // Broadcast public state to room
+    io.to(roomCode).emit("game:state", buildClientState(gameDoc));
+
+    res.status(201).json({ ok: true, gameState: buildClientState(gameDoc) });
+  } catch (err) {
+    console.error("POST /api/games error:", err);
+    res.status(500).json({ ok: false, message: "Failed to start game." });
+  }
+});
+
+// GET /api/games/:roomCode — Fetch current game state (applies lazy timeout)
+app.get("/api/games/:roomCode", requireAuth, async (req, res) => {
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  try {
+    let game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    // Lazy timeout: if deadline has passed, advance phase
+    const advanced = await applyLazyTimeout(game);
+    if (advanced) {
+      await database.updateGameByRoomCode(roomCode, advanced);
+      io.to(roomCode).emit("game:state", buildClientState(advanced));
+      scheduleNextPhaseTimeout(advanced, roomCode);
+      game = advanced;
+    }
+
+    res.status(200).json({ ok: true, gameState: buildClientState(game) });
+  } catch (err) {
+    console.error("GET /api/games/:roomCode error:", err);
+    res.status(500).json({ ok: false, message: "Failed to fetch game state." });
+  }
+});
+
+// GET /api/games/:roomCode/myrole — Returns this player's private role
+app.get("/api/games/:roomCode/myrole", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    const inGame = game.players.some((p) => p.userId === user.id);
+    if (!inGame) {
+      res.status(403).json({ ok: false, message: "You are not in this game." });
+      return;
+    }
+
+    const role = game.quislingId === user.id ? "quisling" : "crew";
+    res.status(200).json({ ok: true, role });
+  } catch (err) {
+    console.error("GET /api/games/:roomCode/myrole error:", err);
+    res.status(500).json({ ok: false, message: "Failed to fetch role." });
+  }
+});
+
+// POST /api/games/:roomCode/ready — Player confirms they've seen their role
+app.post("/api/games/:roomCode/ready", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    if (game.phase !== "role_reveal") {
+      res.status(400).json({ ok: false, message: "Game is not in the role reveal phase." });
+      return;
+    }
+
+    const readyIds = Array.isArray(game.readyPlayerIds) ? game.readyPlayerIds : [];
+
+    if (readyIds.includes(user.id)) {
+      res.status(200).json({ ok: true, gameState: buildClientState(game) });
+      return;
+    }
+
+    const nextReadyIds = [...readyIds, user.id];
+    let next = { ...game, readyPlayerIds: nextReadyIds };
+
+    if (nextReadyIds.length >= PLAYERS_REQUIRED) {
+      next = {
+        ...next,
+        phase: "pick_building",
+        phaseDeadline: Date.now() + PHASE_TIMERS_MS.pick_building,
+      };
+      schedulePhaseTimeout(roomCode, "pick_building", PHASE_TIMERS_MS.pick_building);
+    }
+
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+
+    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+  } catch (err) {
+    console.error("POST /api/games/:roomCode/ready error:", err);
+    res.status(500).json({ ok: false, message: "Failed to submit ready." });
+  }
+});
+
+// POST /api/games/:roomCode/select-building — Leader picks target building
+app.post("/api/games/:roomCode/select-building", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+  const buildingId = String(req.body?.buildingId || "").trim();
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    if (game.phase !== "pick_building") {
+      res.status(400).json({ ok: false, message: "Game is not in the pick building phase." });
+      return;
+    }
+
+    if (game.leaderId !== user.id) {
+      res.status(403).json({ ok: false, message: "Only the current leader can select a building." });
+      return;
+    }
+
+    const validBuildingIds = ["bank-vault", "watchtower", "archives", "armory", "docks", "radio-tower"];
+
+    if (!validBuildingIds.includes(buildingId)) {
+      res.status(400).json({ ok: false, message: "Invalid building." });
+      return;
+    }
+
+    if ((game.spentBuildingIds || []).includes(buildingId)) {
+      res.status(400).json({ ok: false, message: "That building has already been used." });
+      return;
+    }
+
+    const next = {
+      ...game,
+      selectedBuildingId: buildingId,
+      phase: "propose_team",
+      proposedTeam: [],
+      phaseDeadline: Date.now() + PHASE_TIMERS_MS.propose_team,
+    };
+
+    schedulePhaseTimeout(roomCode, "propose_team", PHASE_TIMERS_MS.propose_team);
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+
+    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+  } catch (err) {
+    console.error("POST /api/games/:roomCode/select-building error:", err);
+    res.status(500).json({ ok: false, message: "Failed to select building." });
+  }
+});
+
+// POST /api/games/:roomCode/propose-team — Leader proposes a team
+app.post("/api/games/:roomCode/propose-team", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+  const teamUserIds = req.body?.teamUserIds;
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    if (game.phase !== "propose_team") {
+      res.status(400).json({ ok: false, message: "Game is not in the propose team phase." });
+      return;
+    }
+
+    if (game.leaderId !== user.id) {
+      res.status(403).json({ ok: false, message: "Only the current leader can propose a team." });
+      return;
+    }
+
+    if (!Array.isArray(teamUserIds)) {
+      res.status(400).json({ ok: false, message: "teamUserIds must be an array." });
+      return;
+    }
+
+    const required = OPERATION_TEAM_SIZES[game.operationNumber];
+    if (teamUserIds.length !== required) {
+      res.status(400).json({ ok: false, message: `Operation ${game.operationNumber} requires exactly ${required} players.` });
+      return;
+    }
+
+    const playerIds = game.players.map((p) => p.userId);
+    const allValid = teamUserIds.every((id) => playerIds.includes(id));
+    if (!allValid) {
+      res.status(400).json({ ok: false, message: "All team members must be in the game." });
+      return;
+    }
+
+    const uniqueIds = new Set(teamUserIds);
+    if (uniqueIds.size !== teamUserIds.length) {
+      res.status(400).json({ ok: false, message: "Team members must be unique." });
+      return;
+    }
+
+    const next = {
+      ...game,
+      proposedTeam: teamUserIds,
+      votes: {},
+      phase: "vote",
+      phaseDeadline: Date.now() + PHASE_TIMERS_MS.vote,
+    };
+
+    schedulePhaseTimeout(roomCode, "vote", PHASE_TIMERS_MS.vote);
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+
+    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+  } catch (err) {
+    console.error("POST /api/games/:roomCode/propose-team error:", err);
+    res.status(500).json({ ok: false, message: "Failed to propose team." });
+  }
+});
+
+// POST /api/games/:roomCode/vote — Player votes approve or reject
+app.post("/api/games/:roomCode/vote", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+  const choice = req.body?.choice;
+
+  if (choice !== "approve" && choice !== "reject") {
+    res.status(400).json({ ok: false, message: "Vote must be 'approve' or 'reject'." });
+    return;
+  }
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    if (game.phase !== "vote") {
+      res.status(400).json({ ok: false, message: "Game is not in the voting phase." });
+      return;
+    }
+
+    const inGame = game.players.some((p) => p.userId === user.id);
+    if (!inGame) {
+      res.status(403).json({ ok: false, message: "You are not in this game." });
+      return;
+    }
+
+    if (game.votes && game.votes[user.id]) {
+      res.status(400).json({ ok: false, message: "You have already voted." });
+      return;
+    }
+
+    const nextVotes = { ...(game.votes || {}), [user.id]: choice };
+    let next = { ...game, votes: nextVotes };
+
+    // If all players have voted, resolve
+    if (Object.keys(nextVotes).length >= game.players.length) {
+      next = resolveVotes(next);
+      await database.updateGameByRoomCode(roomCode, next);
+      io.to(roomCode).emit("game:state", buildClientState(next));
+      setTimeout(() => advanceFromVoteResult(roomCode), RESULT_DISPLAY_MS);
+    } else {
+      await database.updateGameByRoomCode(roomCode, next);
+      io.to(roomCode).emit("game:state", buildClientState(next));
+    }
+
+    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+  } catch (err) {
+    console.error("POST /api/games/:roomCode/vote error:", err);
+    res.status(500).json({ ok: false, message: "Failed to submit vote." });
+  }
+});
+
+// POST /api/games/:roomCode/submit-card — Team member submits heist card
+app.post("/api/games/:roomCode/submit-card", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+  const card = req.body?.card;
+
+  if (card !== "clean" && card !== "sabotage") {
+    res.status(400).json({ ok: false, message: "Card must be 'clean' or 'sabotage'." });
+    return;
+  }
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    if (game.phase !== "submit_heist") {
+      res.status(400).json({ ok: false, message: "Game is not in the heist phase." });
+      return;
+    }
+
+    if (!(game.proposedTeam || []).includes(user.id)) {
+      res.status(403).json({ ok: false, message: "You are not on the heist team." });
+      return;
+    }
+
+    if (game.heistCards && game.heistCards[user.id]) {
+      res.status(400).json({ ok: false, message: "You have already submitted your card." });
+      return;
+    }
+
+    // Role enforcement: only the Quisling can submit sabotage
+    if (card === "sabotage" && game.quislingId !== user.id) {
+      res.status(403).json({ ok: false, message: "Only the Quisling can submit sabotage." });
+      return;
+    }
+
+    const nextCards = { ...(game.heistCards || {}), [user.id]: card };
+    let next = { ...game, heistCards: nextCards };
+
+    // If all team members have submitted, resolve the heist
+    if (Object.keys(nextCards).length >= (game.proposedTeam || []).length) {
+      const cleanCount = Object.values(nextCards).filter((c) => c === "clean").length;
+      const sabotageCount = Object.values(nextCards).filter((c) => c === "sabotage").length;
+      const outcome = sabotageCount > 0 ? "alarm" : "success";
+
+      next = {
+        ...next,
+        alarm: outcome === "alarm" ? next.alarm + 1 : next.alarm,
+        successes: outcome === "success" ? next.successes + 1 : next.successes,
+        spentBuildingIds: game.selectedBuildingId
+          ? [...(next.spentBuildingIds || []), game.selectedBuildingId]
+          : next.spentBuildingIds || [],
+        operationHistory: [...(next.operationHistory || []), buildOperationRecord(next, outcome, cleanCount, sabotageCount)],
+        heistReveal: { cleanCount, sabotageCount, outcome },
+        phase: "heist_result",
+        phaseDeadline: null,
+        pendingNextPhase: "next_operation",
+      };
+
+      await database.updateGameByRoomCode(roomCode, next);
+      io.to(roomCode).emit("game:state", buildClientState(next));
+      setTimeout(() => advanceFromHeistResult(roomCode), RESULT_DISPLAY_MS);
+    } else {
+      await database.updateGameByRoomCode(roomCode, next);
+      io.to(roomCode).emit("game:state", buildClientState(next));
+    }
+
+    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+  } catch (err) {
+    console.error("POST /api/games/:roomCode/submit-card error:", err);
+    res.status(500).json({ ok: false, message: "Failed to submit heist card." });
+  }
+});
+
+// POST /api/games/:roomCode/accuse — Player submits final accusation vote
+app.post("/api/games/:roomCode/accuse", requireAuth, async (req, res) => {
+  const { user } = req.auth;
+  const roomCode = normalizeRoomCode(req.params.roomCode);
+  const targetUserId = String(req.body?.targetUserId || "").trim();
+
+  try {
+    const game = await database.getGameByRoomCode(roomCode);
+
+    if (!game) {
+      res.status(404).json({ ok: false, message: "Game not found." });
+      return;
+    }
+
+    if (game.phase !== "final_accusation") {
+      res.status(400).json({ ok: false, message: "Game is not in the final accusation phase." });
+      return;
+    }
+
+    const inGame = game.players.some((p) => p.userId === user.id);
+    if (!inGame) {
+      res.status(403).json({ ok: false, message: "You are not in this game." });
+      return;
+    }
+
+    const targetInGame = game.players.some((p) => p.userId === targetUserId);
+    if (!targetInGame) {
+      res.status(400).json({ ok: false, message: "Accusation target is not in the game." });
+      return;
+    }
+
+    if (game.accusationVotes && game.accusationVotes[user.id]) {
+      res.status(400).json({ ok: false, message: "You have already submitted your accusation." });
+      return;
+    }
+
+    const nextVotes = { ...(game.accusationVotes || {}), [user.id]: targetUserId };
+    let next = { ...game, accusationVotes: nextVotes };
+
+    // If all players have accused, tally
+    if (Object.keys(nextVotes).length >= game.players.length) {
+      next = applyAccusationTally(next);
+    }
+
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+
+    res.status(200).json({ ok: true, gameState: buildClientState(next) });
+  } catch (err) {
+    console.error("POST /api/games/:roomCode/accuse error:", err);
+    res.status(500).json({ ok: false, message: "Failed to submit accusation." });
+  }
+});
+
 app.use((error, _req, res, next) => {
   if (!error) {
     next();
@@ -786,8 +1768,11 @@ app.use("/api", (_req, res) => {
 async function startServer() {
   await database.initializeDatabase();
 
-  app.listen(port, () => {
+  httpServer.listen(port, () => {
     // Keep startup logging concise for local development and deployment logs.
+    console.log(`Service listening on http://localhost:${port}`);
+  });
+}
     console.log(`Service listening on http://localhost:${port}`);
   });
 }

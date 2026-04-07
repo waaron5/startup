@@ -1,231 +1,91 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader";
 import AppLayout from "../components/AppLayout";
-import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
-import { useGame } from "../context/GameContext";
-import { createGameSession } from "../lib/gameSession";
 import { fetchResultsFromService } from "../lib/api";
-import { reopenLobbyInService } from "../lib/api";
-import { readJSON, writeJSON } from "../lib/storage";
-import { createId, nowIso } from "../lib/time";
-import type { GameLobby, GameResult } from "../types/domain";
+import type { GameResult } from "../types/domain";
 
 export default function ResultsPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { setGameSession } = useGame();
-  const [message, setMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [remoteResults, setRemoteResults] = useState<GameResult[] | null>(null);
-
-  const selectedResultId = searchParams.get("resultId");
-  const localResults = readJSON<GameResult[]>(STORAGE_KEYS.results, []);
+  const [results, setResults] = useState<GameResult[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    let isActive = true;
-
-    async function loadResults() {
+    let active = true;
+    async function load() {
       if (!user) {
-        setRemoteResults(null);
+        setResults([]);
+        setIsLoading(false);
         return;
       }
-
       try {
-        const response = await fetchResultsFromService();
-
-        if (!isActive) {
-          return;
-        }
-
-        setRemoteResults(response.results);
-        writeJSON(STORAGE_KEYS.results, response.results);
+        const res = await fetchResultsFromService();
+        if (active) setResults(res.results);
       } catch {
-        if (!isActive) {
-          return;
-        }
-
-        setRemoteResults(null);
+        if (active) setError("Could not load results.");
+      } finally {
+        if (active) setIsLoading(false);
       }
     }
-
-    void loadResults();
-
-    return () => {
-      isActive = false;
-    };
+    void load();
+    return () => { active = false; };
   }, [user]);
 
-  const savedResults = remoteResults ?? localResults;
-  const visibleResults = useMemo(
-    () =>
-      [...(user ? savedResults.filter((savedResult) => savedResult.userId === user.id) : savedResults)]
-        .sort(
-          (resultA, resultB) =>
-            new Date(resultB.completedAt).getTime() - new Date(resultA.completedAt).getTime()
-        ),
-    [savedResults, user]
-  );
-
-  const result = useMemo(() => {
-    if (!visibleResults.length) {
-      return null;
-    }
-
-    if (selectedResultId) {
-      return (
-        visibleResults.find((candidate) => candidate.id === selectedResultId) ?? visibleResults[0]
-      );
-    }
-
-    return visibleResults[0];
-  }, [selectedResultId, visibleResults]);
-
-  async function handlePlayAgain() {
-    setMessage("");
-    setErrorMessage("");
-
-    if (!result) {
-      setErrorMessage("No result is available to replay this match.");
-      return;
-    }
-
-    const replayUserId = user?.id ?? createId("guest");
-    const replayPlayerName = user?.displayName ?? "Guest Player";
-
-    const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
-    const timestamp = nowIso();
-    const existingLobby = lobbies.find((lobby) => lobby.roomCode === result.roomCode);
-
-    let nextLobbies: GameLobby[];
-
-    if (existingLobby) {
-      const replayLobby: GameLobby = {
-        ...existingLobby,
-        status: "open",
-        updatedAt: timestamp,
-        players: existingLobby.players.includes(replayUserId)
-          ? existingLobby.players
-          : [...existingLobby.players, replayUserId],
-      };
-
-      nextLobbies = lobbies.map((lobby) => (lobby.id === replayLobby.id ? replayLobby : lobby));
-    } else {
-      const replayLobby: GameLobby = {
-        id: createId("lobby"),
-        roomCode: result.roomCode,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        hostUserId: replayUserId,
-        players: [replayUserId],
-        status: "open",
-      };
-
-      nextLobbies = [replayLobby, ...lobbies];
-    }
-
-    try {
-      const response = await reopenLobbyInService(result.roomCode);
-
-      if (response.lobby) {
-        const merged = lobbies.some((lobby) => lobby.id === response.lobby?.id)
-          ? lobbies.map((lobby) => (lobby.id === response.lobby?.id ? response.lobby : lobby))
-          : [response.lobby, ...lobbies];
-
-        writeJSON(STORAGE_KEYS.games, merged);
-      } else {
-        writeJSON(STORAGE_KEYS.games, nextLobbies);
-      }
-    } catch {
-      writeJSON(STORAGE_KEYS.games, nextLobbies);
-    }
-
-    setGameSession(
-      createGameSession({
-        roomCode: result.roomCode,
-        userId: replayUserId,
-        playerName: replayPlayerName,
-        actionLogPrefix: "Replay session created",
-      })
-    );
-
-    setMessage(`Replay session created for room ${result.roomCode}.`);
-    navigate("/game");
-  }
-
-  if (!result) {
-    return (
-      <AppLayout
-        header={<SiteHeader />}
-        mainClassName="flex-1 flex flex-col items-center gap-6 text-center"
-      >
-        <section className="card w-full max-w-xl">
-          <h2 className="text-2xl mb-2">No match results yet</h2>
-          <p className="text-text-muted">Complete a game to generate results.</p>
-          <div className="mt-4">
-            <Link className="btn-primary" to="/">
-              Back to lobby
-            </Link>
-          </div>
-        </section>
-      </AppLayout>
-    );
-  }
-
-  const outcomeClass = result.outcome === "win" ? "text-success" : "text-danger";
-  const completedAtLabel = new Date(result.completedAt).toLocaleString();
+  const sorted = results
+    ? [...results].sort(
+        (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+      )
+    : [];
 
   return (
-    <AppLayout
-      header={<SiteHeader />}
-      mainClassName="flex-1 flex flex-col items-center gap-6 text-center"
-    >
-      <section className="card w-full max-w-xl">
-        <h2 className="text-2xl mb-2">Match Results</h2>
-        <p className="text-text-muted">
-          Outcome: <strong className={outcomeClass}>{result.outcome.toUpperCase()}</strong>
-        </p>
-        <p className="text-text-muted mt-1">Score: {result.score}</p>
-        <p className="text-text-muted mt-1">Room code: {result.roomCode}</p>
-        <p className="text-text-muted mt-1">Completed: {completedAtLabel}</p>
-      </section>
+    <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col">
+      <h2 className="text-2xl font-bold text-text text-center mb-4">Match History</h2>
 
-      <section className="card w-full max-w-xl text-left">
-        <h3 className="text-xl mb-2">Mission Breakdown</h3>
-        <p className="text-text-muted">Turns played: {result.summary.turnsPlayed}</p>
-        <p className="text-text-muted mb-3">Time remaining: {result.summary.timeRemaining}s</p>
-        <h4 className="text-lg">Buildings Hit</h4>
-        {result.summary.buildingsHit.length ? (
-          <ol className="list-decimal list-inside text-text-muted">
-            {result.summary.buildingsHit.map((building, index) => (
-              <li key={`${building}-${index}`}>{building}</li>
-            ))}
-          </ol>
-        ) : (
-          <p className="text-text-muted">No building captures were recorded for this match.</p>
-        )}
-      </section>
+      {!user && (
+        <p className="text-text-muted text-center">Sign in to see your results.</p>
+      )}
 
-      <section className="card w-full max-w-xl">
-        <h3 className="text-xl mb-2">Next</h3>
-        {message ? <p className="text-success mb-2">{message}</p> : null}
-        {errorMessage ? <p className="text-danger mb-2">{errorMessage}</p> : null}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
-          <button className="btn-primary" onClick={handlePlayAgain} type="button">
-            Play again
-          </button>
-          <Link className="btn-ghost border border-white/20" to="/">
-            Back to lobby
-          </Link>
-          {user ? (
-            <Link className="btn-ghost border border-white/20" to="/profile">
-              View profile
-            </Link>
-          ) : null}
-        </div>
-      </section>
+      {isLoading && <p className="text-text-muted text-center">Loading...</p>}
+      {error && <p className="text-danger text-center">{error}</p>}
+
+      {!isLoading && sorted.length === 0 && !error && user && (
+        <p className="text-text-muted text-center">No games played yet.</p>
+      )}
+
+      <div className="flex flex-col gap-3 max-w-sm mx-auto w-full">
+        {sorted.map((result) => (
+          <div className="card" key={result.id}>
+            <div className="flex items-center justify-between mb-2">
+              <span className={`font-bold text-lg ${result.outcome === "win" ? "text-success" : "text-danger"}`}>
+                {result.outcome === "win" ? "WIN" : "LOSS"}
+              </span>
+              <span className="text-xs text-text-muted">
+                {new Date(result.completedAt).toLocaleDateString()}
+              </span>
+            </div>
+            <p className="text-text-muted text-sm">
+              Room: <span className="text-text font-mono">{result.roomCode}</span>
+            </p>
+            <p className="text-text-muted text-sm">
+              Winner: <span className={`font-medium ${result.winner === "crew" ? "text-success" : "text-danger"}`}>
+                {result.winner === "crew" ? "Crew" : "Quisling"}
+              </span>
+            </p>
+            <p className="text-text-muted text-sm">
+              Quisling: <span className="text-text">{result.quislingDisplayName}</span>
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="text-center mt-6">
+        <Link className="btn-ghost border border-white/20 px-4 py-2" to="/">
+          Back to Home
+        </Link>
+      </div>
     </AppLayout>
   );
 }
+

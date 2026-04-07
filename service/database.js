@@ -7,6 +7,7 @@ const usersCollectionName = process.env.MONGODB_USERS_COLLECTION || "users";
 const sessionsCollectionName = process.env.MONGODB_SESSIONS_COLLECTION || "sessions";
 const resultsCollectionName = process.env.MONGODB_RESULTS_COLLECTION || "results";
 const lobbiesCollectionName = process.env.MONGODB_LOBBIES_COLLECTION || "lobbies";
+const gamesCollectionName = process.env.MONGODB_GAMES_COLLECTION || "games";
 
 let client;
 let db;
@@ -14,6 +15,7 @@ let usersCollection;
 let sessionsCollection;
 let resultsCollection;
 let lobbiesCollection;
+let gamesCollection;
 
 function escapeMongoUriPart(value) {
   return encodeURIComponent(String(value));
@@ -71,6 +73,7 @@ async function initializeDatabase() {
   sessionsCollection = db.collection(sessionsCollectionName);
   resultsCollection = db.collection(resultsCollectionName);
   lobbiesCollection = db.collection(lobbiesCollectionName);
+  gamesCollection = db.collection(gamesCollectionName);
 
   await Promise.all([
     usersCollection.createIndex({ id: 1 }, { unique: true }),
@@ -82,6 +85,7 @@ async function initializeDatabase() {
     lobbiesCollection.createIndex({ id: 1 }, { unique: true }),
     lobbiesCollection.createIndex({ roomCode: 1 }, { unique: true }),
     lobbiesCollection.createIndex({ players: 1 }),
+    gamesCollection.createIndex({ roomCode: 1 }, { unique: true }),
   ]);
 }
 
@@ -91,6 +95,14 @@ function ensureCollections() {
   }
 
   return { usersCollection, sessionsCollection, resultsCollection, lobbiesCollection };
+}
+
+function ensureGamesCollection() {
+  if (!gamesCollection) {
+    throw new Error("Database is not initialized. Call initializeDatabase() first.");
+  }
+
+  return { gamesCollection };
 }
 
 async function createUser(user) {
@@ -173,8 +185,6 @@ function createDefaultStats() {
     wins: 0,
     losses: 0,
     winRate: 0,
-    totalScore: 0,
-    bestScore: 0,
   };
 }
 
@@ -196,8 +206,6 @@ async function applyResultToUserProfile(userId, result) {
   const gamesPlayed = Number(currentStats.gamesPlayed || 0) + 1;
   const wins = Number(currentStats.wins || 0) + (result.outcome === "win" ? 1 : 0);
   const losses = Number(currentStats.losses || 0) + (result.outcome === "loss" ? 1 : 0);
-  const totalScore = Number(currentStats.totalScore || 0) + Number(result.score || 0);
-  const bestScore = Math.max(Number(currentStats.bestScore || 0), Number(result.score || 0));
   const winRate = gamesPlayed ? Math.round((wins / gamesPlayed) * 100) : 0;
 
   const nextStats = {
@@ -205,8 +213,6 @@ async function applyResultToUserProfile(userId, result) {
     wins,
     losses,
     winRate,
-    totalScore,
-    bestScore,
   };
 
   await collections.usersCollection.updateOne(
@@ -329,6 +335,27 @@ async function leaveLobbyByRoomCode(roomCode, userId, updatedAt) {
   return updatedLobby;
 }
 
+async function getGameByRoomCode(roomCode) {
+  const { gamesCollection } = ensureGamesCollection();
+  return gamesCollection.findOne({ roomCode });
+}
+
+async function createGame(game) {
+  const { gamesCollection } = ensureGamesCollection();
+  await gamesCollection.insertOne(game);
+  return game;
+}
+
+async function updateGameByRoomCode(roomCode, updates) {
+  const { gamesCollection } = ensureGamesCollection();
+  const result = await gamesCollection.findOneAndUpdate(
+    { roomCode },
+    { $set: updates },
+    { returnDocument: "after" }
+  );
+  return result;
+}
+
 module.exports = {
   initializeDatabase,
   createUser,
@@ -348,4 +375,7 @@ module.exports = {
   setLobbyStatusByRoomCode,
   reopenLobbyByRoomCode,
   leaveLobbyByRoomCode,
+  getGameByRoomCode,
+  createGame,
+  updateGameByRoomCode,
 };

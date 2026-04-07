@@ -67,8 +67,6 @@ function createDefaultStats(): UserStats {
     wins: 0,
     losses: 0,
     winRate: 0,
-    totalScore: 0,
-    bestScore: 0,
   };
 }
 
@@ -98,8 +96,8 @@ function createUserRecordFromService(
     displayName: normalizeDisplayName(serviceUser.displayName, serviceUser.email),
     createdAt: serviceUser.createdAt,
     stats: serviceUser.stats ?? existingUser?.stats ?? createDefaultStats(),
-    friends: serviceUser.friends ?? existingUser?.friends ?? [],
-    history: serviceUser.history ?? existingUser?.history ?? [],
+    friends: (serviceUser as { friends?: string[] }).friends ?? existingUser?.friends ?? [],
+    history: (serviceUser as { history?: string[] }).history ?? existingUser?.history ?? [],
   };
 }
 

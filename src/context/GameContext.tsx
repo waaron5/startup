@@ -1,43 +1,208 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type Dispatch,
   type PropsWithChildren,
-  type SetStateAction,
 } from "react";
-import { STORAGE_KEYS } from "../constants/storageKeys";
-import { hydrateGameSession } from "../lib/gameEngine";
-import { readJSON, writeJSON } from "../lib/storage";
-import type { GameSession } from "../types/domain";
+import { io, type Socket } from "socket.io-client";
+import {
+  fetchGameState,
+  fetchMyRole,
+  proposeTeamInService,
+  selectBuildingInService,
+  submitAccusationInService,
+  submitHeistCardInService,
+  submitReadyInService,
+  submitVoteInService,
+} from "../lib/api";
+import type { ClientGameState, GameRole } from "../types/domain";
 
 type GameContextValue = {
-  gameSession: GameSession | null;
-  setGameSession: Dispatch<SetStateAction<GameSession | null>>;
-  clearGameSession: () => void;
+  gameState: ClientGameState | null;
+  myRole: GameRole | null;
+  roomCode: string | null;
+  isConnected: boolean;
+  setRoomCode: (code: string | null) => void;
+  submitReady: () => Promise<void>;
+  selectBuilding: (buildingId: string) => Promise<void>;
+  proposeTeam: (userIds: string[]) => Promise<void>;
+  submitVote: (choice: "approve" | "reject") => Promise<void>;
+  submitHeistCard: (card: "clean" | "sabotage") => Promise<void>;
+  submitAccusation: (targetUserId: string) => Promise<void>;
 };
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
 
 export function GameProvider({ children }: PropsWithChildren) {
-  const [gameSession, setGameSession] = useState<GameSession | null>(() => {
-    const storedSession = readJSON<GameSession | null>(STORAGE_KEYS.gameSession, null);
-    return storedSession ? hydrateGameSession(storedSession) : null;
-  });
+  const [gameState, setGameState] = useState<ClientGameState | null>(null);
+  const [myRole, setMyRole] = useState<GameRole | null>(null);
+  const [roomCode, setRoomCodeState] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const currentRoomRef = useRef<string | null>(null);
 
+  const setRoomCode = useCallback((code: string | null) => {
+    setRoomCodeState(code);
+  }, []);
+
+  // Load role from server when roomCode changes
   useEffect(() => {
-    writeJSON(STORAGE_KEYS.gameSession, gameSession);
-  }, [gameSession]);
+    if (!roomCode) {
+      setMyRole(null);
+      setGameState(null);
+      return;
+    }
+
+    let active = true;
+
+    async function loadRole() {
+      try {
+        const res = await fetchMyRole(roomCode!);
+        if (active) setMyRole(res.role);
+      } catch {
+        // Role not available yet (game not started) — will retry when game starts
+      }
+    }
+
+    async function loadState() {
+      try {
+        const res = await fetchGameState(roomCode!);
+        if (active) setGameState(res.gameState);
+      } catch {
+        // Game may not exist yet
+      }
+    }
+
+    void loadRole();
+    void loadState();
+
+    return () => {
+      active = false;
+    };
+  }, [roomCode]);
+
+  // Reload role when game transitions out of role_reveal into pick_building
+  useEffect(() => {
+    if (!roomCode || !gameState) return;
+    if (gameState.phase === "pick_building" && !myRole) {
+      fetchMyRole(roomCode)
+        .then((res) => setMyRole(res.role))
+        .catch(() => {});
+    }
+    // If game is over, we can infer role from result
+    if (gameState.phase === "game_over" && gameState.result && !myRole) {
+      // Leave myRole as null; components will derive from result.quislingId
+    }
+  }, [gameState?.phase, myRole, roomCode]);
+
+  // Socket.IO connection — maintained while roomCode is set
+  useEffect(() => {
+    if (!roomCode) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        currentRoomRef.current = null;
+        setIsConnected(false);
+      }
+      return;
+    }
+
+    // Reuse existing socket if we already joined this room
+    if (socketRef.current && currentRoomRef.current === roomCode) {
+      return;
+    }
+
+    // Disconnect previous socket if switching rooms
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+
+    const socket = io({ path: "/socket.io", transports: ["websocket", "polling"] });
+    socketRef.current = socket;
+    currentRoomRef.current = roomCode;
+
+    socket.on("connect", () => {
+      setIsConnected(true);
+      socket.emit("game:join", { roomCode });
+    });
+
+    socket.on("disconnect", () => {
+      setIsConnected(false);
+    });
+
+    socket.on("game:state", (state: ClientGameState) => {
+      setGameState(state);
+      // If game just started (role_reveal) and we don't have a role yet, fetch it
+      if (state.phase === "role_reveal" || state.phase === "pick_building") {
+        fetchMyRole(roomCode)
+          .then((res) => setMyRole(res.role))
+          .catch(() => {});
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+      currentRoomRef.current = null;
+      setIsConnected(false);
+    };
+  }, [roomCode]);
+
+  const submitReady = useCallback(async () => {
+    if (!roomCode) return;
+    const res = await submitReadyInService(roomCode);
+    setGameState(res.gameState);
+  }, [roomCode]);
+
+  const selectBuilding = useCallback(async (buildingId: string) => {
+    if (!roomCode) return;
+    const res = await selectBuildingInService(roomCode, buildingId);
+    setGameState(res.gameState);
+  }, [roomCode]);
+
+  const proposeTeam = useCallback(async (userIds: string[]) => {
+    if (!roomCode) return;
+    const res = await proposeTeamInService(roomCode, userIds);
+    setGameState(res.gameState);
+  }, [roomCode]);
+
+  const submitVote = useCallback(async (choice: "approve" | "reject") => {
+    if (!roomCode) return;
+    const res = await submitVoteInService(roomCode, choice);
+    setGameState(res.gameState);
+  }, [roomCode]);
+
+  const submitHeistCard = useCallback(async (card: "clean" | "sabotage") => {
+    if (!roomCode) return;
+    const res = await submitHeistCardInService(roomCode, card);
+    setGameState(res.gameState);
+  }, [roomCode]);
+
+  const submitAccusation = useCallback(async (targetUserId: string) => {
+    if (!roomCode) return;
+    const res = await submitAccusationInService(roomCode, targetUserId);
+    setGameState(res.gameState);
+  }, [roomCode]);
 
   const value = useMemo<GameContextValue>(
     () => ({
-      gameSession,
-      setGameSession,
-      clearGameSession: () => setGameSession(null),
+      gameState,
+      myRole,
+      roomCode,
+      isConnected,
+      setRoomCode,
+      submitReady,
+      selectBuilding,
+      proposeTeam,
+      submitVote,
+      submitHeistCard,
+      submitAccusation,
     }),
-    [gameSession]
+    [gameState, myRole, roomCode, isConnected, setRoomCode, submitReady, selectBuilding, proposeTeam, submitVote, submitHeistCard, submitAccusation]
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

@@ -1,22 +1,27 @@
 import type { GamePhase } from "../types/domain";
 
-export const GAME_PHASES: Record<GamePhase, GamePhase> = {
-  planning: "planning",
-  action: "action",
-  resolution: "resolution",
-  complete: "complete",
-};
-
-export const GAME_PHASE_HINTS: Record<GamePhase, string> = {
-  planning: "Planning: Select a target building.",
-  action: "Action: Commit your move for this turn.",
-  resolution: "Resolution: Apply outcomes and advance the mission.",
-  complete: "Mission complete: Review your results.",
-};
+export const GAME_PHASES = {
+  lobby: "lobby",
+  role_reveal: "role_reveal",
+  pick_building: "pick_building",
+  propose_team: "propose_team",
+  vote: "vote",
+  vote_result: "vote_result",
+  submit_heist: "submit_heist",
+  heist_result: "heist_result",
+  final_accusation: "final_accusation",
+  game_over: "game_over",
+} as const satisfies Record<GamePhase, GamePhase>;
 
 export const GAME_PHASE_LABELS: Record<GamePhase, string> = {
-  planning: "Planning",
-  action: "Action",
-  resolution: "Resolution",
-  complete: "Complete",
+  lobby: "Lobby",
+  role_reveal: "Your Role",
+  pick_building: "Pick Target",
+  propose_team: "Propose Team",
+  vote: "Vote on Plan",
+  vote_result: "Vote Result",
+  submit_heist: "Run the Heist",
+  heist_result: "Heist Outcome",
+  final_accusation: "Final Accusation",
+  game_over: "Game Over",
 };

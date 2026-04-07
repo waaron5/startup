@@ -79,24 +79,18 @@ export default function ProfilePage() {
         wins: 0,
         losses: 0,
         winRate: 0,
-        totalScore: 0,
-        bestScore: 0,
       };
     }
 
     const gamesPlayed = userResults.length;
     const wins = userResults.filter((result) => result.outcome === "win").length;
     const losses = gamesPlayed - wins;
-    const totalScore = userResults.reduce((sum, result) => sum + result.score, 0);
-    const bestScore = userResults.reduce((best, result) => Math.max(best, result.score), 0);
 
     return {
       gamesPlayed,
       wins,
       losses,
       winRate: gamesPlayed ? Math.round((wins / gamesPlayed) * 100) : 0,
-      totalScore,
-      bestScore,
     };
   })();
 
@@ -378,8 +372,6 @@ export default function ProfilePage() {
           <li>Wins: {stats.wins}</li>
           <li>Losses: {stats.losses}</li>
           <li>Win percentage: {stats.winRate}%</li>
-          <li>Total score: {stats.totalScore}</li>
-          <li>Best score: {stats.bestScore}</li>
         </ul>
       </section>
 
@@ -404,7 +396,7 @@ export default function ProfilePage() {
               <li key={result.id} className="border border-white/10 rounded-md p-2">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                   <span>
-                    {result.outcome.toUpperCase()} | Score {result.score} | Room {result.roomCode}
+                    {result.outcome.toUpperCase()} | {result.winner === "crew" ? "Crew Win" : "Quisling Win"} | Room {result.roomCode}
                   </span>
                   <Link
                     className="hover:text-text"
@@ -414,7 +406,7 @@ export default function ProfilePage() {
                   </Link>
                 </div>
                 <div className="text-sm">
-                  {new Date(result.completedAt).toLocaleString()} | Turns {result.summary.turnsPlayed}
+                  {new Date(result.completedAt).toLocaleString()}
                 </div>
               </li>
             ))}

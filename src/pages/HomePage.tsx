@@ -1,267 +1,212 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
 import SiteHeader from "../components/SiteHeader";
-import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAuth } from "../context/AuthContext";
-import { useGame } from "../context/GameContext";
-import useNoScroll from "../hooks/useNoScroll";
-import { createGameSession } from "../lib/gameSession";
 import {
   createLobbyInService,
   fetchLobbyByRoomCode,
   joinLobbyInService,
+  startGameInService,
 } from "../lib/api";
-import { fetchMissionIntel } from "../lib/missionIntel";
 import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from "../lib/roomCode";
-import { readJSON, writeJSON } from "../lib/storage";
-import { createId, nowIso } from "../lib/time";
 import type { GameLobby } from "../types/domain";
-
-type RouteMessageState = {
-  message?: string;
-};
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { user } = useAuth();
-  const { setGameSession } = useGame();
-  useNoScroll();
 
-  const routeMessage = (location.state as RouteMessageState | null)?.message ?? "";
-
-  const [name, setName] = useState("");
-  const [roomCode, setRoomCode] = useState("");
-  const [infoMessage, setInfoMessage] = useState(routeMessage);
+  const [roomCodeInput, setRoomCodeInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [missionIntel, setMissionIntel] = useState("");
-  const [intelError, setIntelError] = useState("");
-  const [isIntelLoading, setIsIntelLoading] = useState(true);
+  const [activeLobby, setActiveLobby] = useState<GameLobby | null>(null);
+  const [lobbyUsers, setLobbyUsers] = useState<{ id: string; displayName: string }[]>([]);
+  const [isStarting, setIsStarting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const isHost = !!activeLobby && activeLobby.hostUserId === user?.id;
+
+  // Poll lobby for player count and status
   useEffect(() => {
-    if (user?.displayName) {
-      setName((currentName) => (currentName ? currentName : user.displayName));
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (routeMessage) {
-      setInfoMessage(routeMessage);
-    }
-  }, [routeMessage]);
-
-  useEffect(() => {
-    let isActive = true;
-
-    async function loadMissionIntel() {
-      setIsIntelLoading(true);
-      setIntelError("");
-
-      try {
-        const intel = await fetchMissionIntel();
-
-        if (!isActive) {
-          return;
-        }
-
-        setMissionIntel(intel);
-      } catch {
-        if (!isActive) {
-          return;
-        }
-
-        setMissionIntel("");
-        setIntelError("Unable to load mission intel right now.");
-      } finally {
-        if (isActive) {
-          setIsIntelLoading(false);
-        }
-      }
-    }
-
-    loadMissionIntel();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  function clearMessages() {
-    setInfoMessage("");
-    setErrorMessage("");
-  }
-
-  function buildParticipantIdentity() {
-    const playerName = name.trim() || user?.displayName || "";
-
-    if (!playerName) {
-      setErrorMessage("Enter a player name before joining or creating a room.");
-      return null;
-    }
-
-    return {
-      userId: user?.id ?? createId("guest"),
-      playerName,
-    };
-  }
-
-  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    clearMessages();
-
-    const participant = buildParticipantIdentity();
-
-    if (!participant) {
+    if (!activeLobby) {
+      if (pollRef.current) clearInterval(pollRef.current);
       return;
     }
 
-    const normalizedCode = normalizeRoomCode(roomCode);
+    async function pollLobby() {
+      if (!activeLobby) return;
+      try {
+        const res = await fetchLobbyByRoomCode(activeLobby.roomCode);
+        if (res.lobby) {
+          setActiveLobby(res.lobby);
+          if (res.lobby.status === "in_progress") {
+            navigate(`/game/${activeLobby.roomCode}`);
+          }
+        }
+      } catch {
+        // silent — keep polling
+      }
+    }
 
-    if (!isValidRoomCode(normalizedCode)) {
+    pollRef.current = setInterval(pollLobby, 2000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [activeLobby, navigate]);
+
+  async function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage("");
+
+    if (!user) {
+      setErrorMessage("You must be signed in to join a game.");
+      return;
+    }
+
+    const code = normalizeRoomCode(roomCodeInput);
+    if (!isValidRoomCode(code)) {
       setErrorMessage("Room code must be exactly 4 uppercase letters (A-Z).");
       return;
     }
 
-    let existingLobby: GameLobby | null;
-
     try {
-      const fetched = await fetchLobbyByRoomCode(normalizedCode);
-      existingLobby = fetched.lobby;
-    } catch {
-      const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
-      existingLobby = lobbies.find((candidate) => candidate.roomCode === normalizedCode) ?? null;
-    }
-
-    if (!existingLobby) {
-      setErrorMessage("Room code not found.");
-      return;
-    }
-
-    try {
-      const joined = await joinLobbyInService(normalizedCode);
-
-      if (joined.lobby) {
-        const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
-        const nextLobbies = lobbies.some((candidate) => candidate.id === joined.lobby?.id)
-          ? lobbies.map((candidate) => (candidate.id === joined.lobby?.id ? joined.lobby : candidate))
-          : [...lobbies, joined.lobby];
-
-        writeJSON(STORAGE_KEYS.games, nextLobbies);
+      const res = await joinLobbyInService(code);
+      if (res.lobby) {
+        setActiveLobby(res.lobby);
+      } else {
+        setErrorMessage("Could not join room.");
       }
-    } catch {
-      const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
-      const updatedLobby: GameLobby = {
-        ...existingLobby,
-        updatedAt: nowIso(),
-        players: existingLobby.players.includes(participant.userId)
-          ? existingLobby.players
-          : [...existingLobby.players, participant.userId],
-      };
-
-      const nextLobbies = lobbies.map((candidate) =>
-        candidate.id === updatedLobby.id ? updatedLobby : candidate
-      );
-
-      writeJSON(STORAGE_KEYS.games, nextLobbies);
+    } catch (e: unknown) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to join room.");
     }
-
-    setGameSession(
-      createGameSession({
-        roomCode: normalizedCode,
-        userId: participant.userId,
-        playerName: participant.playerName,
-      })
-    );
-    navigate("/game");
   }
 
   async function handleCreateRoom() {
-    clearMessages();
+    setErrorMessage("");
 
-    const participant = buildParticipantIdentity();
-
-    if (!participant) {
+    if (!user) {
+      setErrorMessage("You must be signed in to create a game.");
       return;
     }
 
-    const lobbies = readJSON<GameLobby[]>(STORAGE_KEYS.games, []);
-    const existingCodes = new Set(lobbies.map((lobby) => lobby.roomCode));
     let newRoomCode: string;
-
     try {
-      newRoomCode = generateRoomCode(existingCodes);
+      newRoomCode = generateRoomCode(new Set());
     } catch {
-      setErrorMessage("Unable to generate room code. Please try again.");
+      setErrorMessage("Unable to generate a room code. Please try again.");
       return;
     }
 
     try {
-      const created = await createLobbyInService(newRoomCode);
-
-      if (created.lobby) {
-        writeJSON(STORAGE_KEYS.games, [...lobbies, created.lobby]);
+      const res = await createLobbyInService(newRoomCode);
+      if (res.lobby) {
+        setActiveLobby(res.lobby);
+      } else {
+        setErrorMessage("Failed to create room.");
       }
-    } catch {
-      const timestamp = nowIso();
-      const newLobby: GameLobby = {
-        id: createId("lobby"),
-        roomCode: newRoomCode,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        hostUserId: participant.userId,
-        players: [participant.userId],
-        status: "open",
-      };
-
-      writeJSON(STORAGE_KEYS.games, [...lobbies, newLobby]);
+    } catch (e: unknown) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to create room.");
     }
-
-    setGameSession(
-      createGameSession({
-        roomCode: newRoomCode,
-        userId: participant.userId,
-        playerName: participant.playerName,
-      })
-    );
-    setRoomCode(newRoomCode);
-    navigate("/game");
   }
 
+  async function handleStartGame() {
+    if (!activeLobby || isStarting) return;
+    setErrorMessage("");
+    setIsStarting(true);
+    try {
+      await startGameInService(activeLobby.roomCode);
+      navigate(`/game/${activeLobby.roomCode}`);
+    } catch (e: unknown) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to start game.");
+      setIsStarting(false);
+    }
+  }
+
+  function handleLeaveRoom() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setActiveLobby(null);
+    setLobbyUsers([]);
+    setRoomCodeInput("");
+    setErrorMessage("");
+  }
+
+  // Lobby view
+  if (activeLobby) {
+    const playerCount = activeLobby.players.length;
+    const readyToStart = isHost && playerCount === 5;
+    return (
+      <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col items-center gap-4 pt-6">
+        <h2 className="text-2xl font-bold text-text">Room: {activeLobby.roomCode}</h2>
+        <p className="text-text-muted text-sm">Share this code with your crew.</p>
+
+        <div className="card w-full max-w-sm">
+          <p className="text-xs text-text-muted uppercase tracking-wide mb-3">
+            Players ({playerCount}/5)
+          </p>
+          {activeLobby.players.map((id) => (
+            <div className="flex items-center gap-2 py-1" key={id}>
+              <span className="w-2 h-2 rounded-full bg-success inline-block" />
+              <span className="text-text text-sm">
+                {lobbyUsers.find((u) => u.id === id)?.displayName ?? id}
+                {id === activeLobby.hostUserId ? " (Host)" : ""}
+                {id === user?.id ? " (You)" : ""}
+              </span>
+            </div>
+          ))}
+          {playerCount < 5 && (
+            <p className="text-text-muted text-xs mt-3 italic">
+              Waiting for {5 - playerCount} more player{5 - playerCount !== 1 ? "s" : ""}...
+            </p>
+          )}
+        </div>
+
+        {errorMessage && <p className="text-danger text-sm text-center">{errorMessage}</p>}
+
+        {isHost ? (
+          <button
+            className="btn-primary w-full max-w-sm py-3 text-lg"
+            disabled={!readyToStart || isStarting}
+            onClick={handleStartGame}
+            type="button"
+          >
+            {isStarting ? "Starting..." : readyToStart ? "Start Game" : `Waiting for players (${playerCount}/5)`}
+          </button>
+        ) : (
+          <div className="card w-full max-w-sm text-center py-4">
+            <p className="text-text-muted">Waiting for the host to start the game...</p>
+          </div>
+        )}
+
+        <button
+          className="btn-ghost w-full max-w-sm border border-white/20"
+          onClick={handleLeaveRoom}
+          type="button"
+        >
+          Leave Room
+        </button>
+      </AppLayout>
+    );
+  }
+
+  // Initial view
   return (
     <AppLayout header={<SiteHeader />} mainClassName="flex-1 flex flex-col">
       <div className="flex flex-col items-center gap-2">
         {user ? (
-          <p className="text-text-muted text-center">
-            Signed in as {user.displayName} ({user.email})
+          <p className="text-text-muted text-center text-sm">
+            Signed in as <span className="text-text">{user.displayName}</span>
           </p>
         ) : null}
-        {infoMessage ? <p className="text-success text-center">{infoMessage}</p> : null}
         {errorMessage ? <p className="text-danger text-center">{errorMessage}</p> : null}
       </div>
 
       <form className="flex flex-col mt-8 items-center gap-2" onSubmit={handleJoinRoom}>
         <label className="text-lg text-text flex flex-col items-start gap-2 w-80">
-          NAME
-          <input
-            className="input-field w-full"
-            name="name"
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Your name"
-            type="text"
-            value={name}
-          />
-        </label>
-
-        <label className="text-lg text-text flex flex-col items-start gap-2 w-80 mt-2">
           ROOM CODE
           <input
             className="input-field w-full"
             name="roomCode"
-            onChange={(event) => setRoomCode(normalizeRoomCode(event.target.value))}
-            placeholder="'ABCD'"
+            onChange={(event) => setRoomCodeInput(normalizeRoomCode(event.target.value))}
+            placeholder="ABCD"
             type="text"
-            value={roomCode}
+            value={roomCodeInput}
           />
         </label>
 
@@ -285,14 +230,6 @@ export default function HomePage() {
           one player is not who they claim to be.
         </em>
       </p>
-
-      <div className="mt-auto w-full max-w-xl self-center pb-4 pt-6 text-center">
-        <p className="text-text-muted text-xs uppercase tracking-wide">Mission Intel</p>
-        <p className="text-text-muted text-xs">Source: Advice Slip API (third-party)</p>
-        {isIntelLoading ? <p className="text-text-muted mt-1">Loading intel...</p> : null}
-        {!isIntelLoading && intelError ? <p className="text-danger mt-1">{intelError}</p> : null}
-        {!isIntelLoading && !intelError ? <p className="text-text mt-1">{missionIntel}</p> : null}
-      </div>
     </AppLayout>
   );
 }
