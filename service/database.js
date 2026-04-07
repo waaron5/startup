@@ -348,12 +348,36 @@ async function createGame(game) {
 
 async function updateGameByRoomCode(roomCode, updates) {
   const { gamesCollection } = ensureGamesCollection();
+  const { _id, ...fields } = updates;
   const result = await gamesCollection.findOneAndUpdate(
     { roomCode },
-    { $set: updates },
+    { $set: fields },
     { returnDocument: "after" }
   );
   return result;
+}
+
+// Atomically set a keyed field (e.g., votes.userId) only if it doesn't exist yet.
+// Returns the updated document, or null if the key already existed or filter didn't match.
+async function atomicSetGameField(roomCode, phase, fieldPath, key, value) {
+  const { gamesCollection } = ensureGamesCollection();
+  const fullPath = `${fieldPath}.${key}`;
+  return gamesCollection.findOneAndUpdate(
+    { roomCode, phase, [fullPath]: { $exists: false } },
+    { $set: { [fullPath]: value } },
+    { returnDocument: "after" }
+  );
+}
+
+// Atomically add to a set array field only if the value isn't already present.
+// Returns the updated document, or null if filter didn't match.
+async function atomicAddToGameSet(roomCode, phase, fieldPath, value) {
+  const { gamesCollection } = ensureGamesCollection();
+  return gamesCollection.findOneAndUpdate(
+    { roomCode, phase, [fieldPath]: { $nin: [value] } },
+    { $addToSet: { [fieldPath]: value } },
+    { returnDocument: "after" }
+  );
 }
 
 module.exports = {
@@ -378,4 +402,6 @@ module.exports = {
   getGameByRoomCode,
   createGame,
   updateGameByRoomCode,
+  atomicSetGameField,
+  atomicAddToGameSet,
 };

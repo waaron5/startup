@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { isOnTeam, hasSubmittedCard } from "../../lib/gameEngine";
+import { BUILDINGS_BY_ID } from "../../constants/buildings";
 import PhaseTimer from "./PhaseTimer";
 
 type SubmitHeistPhaseProps = {
@@ -41,7 +42,7 @@ export default function SubmitHeistPhase({ state, myUserId, myRole }: SubmitHeis
         <h2 className="text-xl font-bold text-text mb-1">Heist in Progress</h2>
         <p className="text-text-muted text-sm">
           Operation {state.operationNumber} — Target:{" "}
-          <span className="font-medium text-text">{state.selectedBuildingId ?? "—"}</span>
+          <span className="font-medium text-text">{BUILDINGS_BY_ID[state.selectedBuildingId ?? ""]?.label ?? state.selectedBuildingId ?? "—"}</span>
         </p>
         <p className="text-xs text-text-muted mt-1">
           {submittedCount}/{teamSize} cards submitted

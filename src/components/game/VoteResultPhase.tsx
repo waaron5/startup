@@ -39,7 +39,7 @@ export default function VoteResultPhase({ state }: VoteResultPhaseProps) {
         )}
         {forcedEscalation && (
           <p className="text-danger text-sm mt-2 font-medium">
-            ⚠ 3 rejected — team auto-selected by leader.
+            ⚠ 3 plans rejected — operation lost. Alarm +1.
           </p>
         )}
       </div>

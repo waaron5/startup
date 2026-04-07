@@ -19,7 +19,6 @@ export default function HomePage() {
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [activeLobby, setActiveLobby] = useState<GameLobby | null>(null);
-  const [lobbyUsers, setLobbyUsers] = useState<{ id: string; displayName: string }[]>([]);
   const [isStarting, setIsStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -122,7 +121,6 @@ export default function HomePage() {
   function handleLeaveRoom() {
     if (pollRef.current) clearInterval(pollRef.current);
     setActiveLobby(null);
-    setLobbyUsers([]);
     setRoomCodeInput("");
     setErrorMessage("");
   }
@@ -144,7 +142,7 @@ export default function HomePage() {
             <div className="flex items-center gap-2 py-1" key={id}>
               <span className="w-2 h-2 rounded-full bg-success inline-block" />
               <span className="text-text text-sm">
-                {lobbyUsers.find((u) => u.id === id)?.displayName ?? id}
+                {activeLobby.playerDetails.find((u) => u.id === id)?.displayName ?? id}
                 {id === activeLobby.hostUserId ? " (Host)" : ""}
                 {id === user?.id ? " (You)" : ""}
               </span>

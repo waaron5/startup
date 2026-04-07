@@ -37,7 +37,7 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
       <div className="text-center">
         <h2 className="text-xl font-bold text-text mb-1">Final Accusation</h2>
         <p className="text-text-muted text-sm">
-          3 operations complete. Who is the Quisling?
+          3 successful heists. Who is the Quisling?
         </p>
         <p className="text-xs text-text-muted mt-1">
           {accusedCount}/{totalPlayers} accusations submitted

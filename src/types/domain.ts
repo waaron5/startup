@@ -111,5 +111,6 @@ export type GameLobby = {
   updatedAt: string;
   hostUserId: string;
   players: string[];
+  playerDetails: { id: string; displayName: string }[];
   status: GameLobbyStatus;
 };

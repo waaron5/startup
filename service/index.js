@@ -114,7 +114,7 @@ function normalizeRoomCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function toPublicLobby(lobby) {
+function toPublicLobby(lobby, playerDetails) {
   return {
     id: lobby.id,
     roomCode: lobby.roomCode,
@@ -122,8 +122,19 @@ function toPublicLobby(lobby) {
     updatedAt: lobby.updatedAt,
     hostUserId: lobby.hostUserId,
     players: Array.isArray(lobby.players) ? lobby.players : [],
+    playerDetails: playerDetails || [],
     status: lobby.status,
   };
+}
+
+async function enrichLobbyPlayerDetails(lobby) {
+  const playerIds = Array.isArray(lobby.players) ? lobby.players : [];
+  const details = [];
+  for (const id of playerIds) {
+    const user = await database.findUserById(id);
+    details.push({ id, displayName: user ? user.displayName : id });
+  }
+  return details;
 }
 
 function parseLobbyStatus(value) {
@@ -435,10 +446,10 @@ async function applyLazyTimeout(game) {
   switch (game.phase) {
     case "pick_building": {
       let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
-      next.leaderId = getNextLeaderId(game.players, game.leaderId);
       if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
         return applyForcedEscalation(next);
       }
+      next.leaderId = getNextLeaderId(game.players, game.leaderId);
       return {
         ...next,
         phase: "pick_building",
@@ -449,10 +460,10 @@ async function applyLazyTimeout(game) {
 
     case "propose_team": {
       let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
-      next.leaderId = getNextLeaderId(game.players, game.leaderId);
       if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
         return applyForcedEscalation(next);
       }
+      next.leaderId = getNextLeaderId(game.players, game.leaderId);
       return {
         ...next,
         phase: "propose_team",
@@ -484,7 +495,7 @@ async function applyLazyTimeout(game) {
         ],
         heistReveal: { cleanCount, sabotageCount, outcome: "alarm" },
         phase: "heist_result",
-        phaseDeadline: null,
+        phaseDeadline: Date.now() + RESULT_DISPLAY_MS,
         pendingNextPhase: "next_operation",
       };
       return next;
@@ -541,10 +552,10 @@ async function handleServerPhaseTimeout(game, roomCode) {
 
   if (game.phase === "pick_building") {
     let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
-    next.leaderId = getNextLeaderId(game.players, game.leaderId);
     if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
       next = applyForcedEscalation(next);
     } else {
+      next.leaderId = getNextLeaderId(game.players, game.leaderId);
       next = { ...next, phase: "pick_building", selectedBuildingId: null, phaseDeadline: now + PHASE_TIMERS_MS.pick_building };
       schedulePhaseTimeout(roomCode, "pick_building", PHASE_TIMERS_MS.pick_building);
     }
@@ -556,10 +567,10 @@ async function handleServerPhaseTimeout(game, roomCode) {
 
   if (game.phase === "propose_team") {
     let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
-    next.leaderId = getNextLeaderId(game.players, game.leaderId);
     if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
       next = applyForcedEscalation(next);
     } else {
+      next.leaderId = getNextLeaderId(game.players, game.leaderId);
       next = { ...next, phase: "propose_team", proposedTeam: [], phaseDeadline: now + PHASE_TIMERS_MS.propose_team };
       schedulePhaseTimeout(roomCode, "propose_team", PHASE_TIMERS_MS.propose_team);
     }
@@ -591,7 +602,7 @@ async function handleServerPhaseTimeout(game, roomCode) {
       operationHistory: [...(game.operationHistory || []), buildOperationRecord(game, "alarm", cleanCount, sabotageCount)],
       heistReveal: { cleanCount, sabotageCount, outcome: "alarm" },
       phase: "heist_result",
-      phaseDeadline: null,
+      phaseDeadline: Date.now() + RESULT_DISPLAY_MS,
       pendingNextPhase: "next_operation",
     };
     await database.updateGameByRoomCode(roomCode, next);
@@ -658,13 +669,50 @@ function scheduleNextPhaseTimeout(game, roomCode) {
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  if (!cookieHeader) return cookies;
+  for (const pair of cookieHeader.split(";")) {
+    const [name, ...rest] = pair.trim().split("=");
+    if (name) cookies[name.trim()] = rest.join("=").trim();
+  }
+  return cookies;
+}
+
+async function authenticateSocket(socket) {
+  const cookies = parseCookies(socket.handshake?.headers?.cookie);
+  const token = cookies[authCookieName];
+  if (!token) return null;
+  const session = await database.findSessionByToken(token);
+  if (!session) return null;
+  const user = await database.findUserById(session.userId);
+  return user || null;
+}
+
 io.on("connection", (socket) => {
   socket.on("game:join", async ({ roomCode }) => {
     if (!roomCode) return;
-    socket.join(roomCode);
+
+    const user = await authenticateSocket(socket);
+    if (!user) return;
+
     try {
-      const game = await database.getGameByRoomCode(roomCode);
-      if (game) {
+      let game = await database.getGameByRoomCode(roomCode);
+      if (!game) return;
+
+      // Verify user is a participant
+      const inGame = game.players.some((p) => p.userId === user.id);
+      if (!inGame) return;
+
+      socket.join(roomCode);
+
+      const advanced = await applyLazyTimeout(game);
+      if (advanced) {
+        const { _id, ...updates } = advanced;
+        await database.updateGameByRoomCode(roomCode, updates);
+        io.to(roomCode).emit("game:state", buildClientState(advanced));
+        scheduleNextPhaseTimeout(advanced, roomCode);
+      } else {
         socket.emit("game:state", buildClientState(game));
       }
     } catch {
@@ -1006,7 +1054,7 @@ app.get("/api/lobbies/:roomCode", requireAuth, async (req, res) => {
 
     res.status(200).json({
       ok: true,
-      lobby: toPublicLobby(lobby),
+      lobby: toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)),
     });
   } catch {
     res.status(500).json({
@@ -1054,7 +1102,7 @@ app.post("/api/lobbies", requireAuth, async (req, res) => {
 
     res.status(201).json({
       ok: true,
-      lobby: toPublicLobby(lobby),
+      lobby: toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)),
     });
   } catch {
     res.status(500).json({
@@ -1089,7 +1137,7 @@ app.post("/api/lobbies/:roomCode/join", requireAuth, async (req, res) => {
 
     res.status(200).json({
       ok: true,
-      lobby: toPublicLobby(lobby),
+      lobby: toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)),
     });
   } catch {
     res.status(500).json({
@@ -1116,7 +1164,7 @@ app.post("/api/lobbies/:roomCode/leave", requireAuth, async (req, res) => {
 
     res.status(200).json({
       ok: true,
-      lobby: lobby ? toPublicLobby(lobby) : null,
+      lobby: lobby ? toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)) : null,
     });
   } catch {
     res.status(500).json({
@@ -1159,7 +1207,7 @@ app.post("/api/lobbies/:roomCode/status", requireAuth, async (req, res) => {
 
     res.status(200).json({
       ok: true,
-      lobby: toPublicLobby(lobby),
+      lobby: toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)),
     });
   } catch {
     res.status(500).json({
@@ -1197,7 +1245,7 @@ app.post("/api/lobbies/:roomCode/reopen", requireAuth, async (req, res) => {
 
     res.status(200).json({
       ok: true,
-      lobby: toPublicLobby(lobby),
+      lobby: toPublicLobby(lobby, await enrichLobbyPlayerDetails(lobby)),
     });
   } catch {
     res.status(500).json({
@@ -1367,38 +1415,33 @@ app.post("/api/games/:roomCode/ready", requireAuth, async (req, res) => {
   const roomCode = normalizeRoomCode(req.params.roomCode);
 
   try {
-    const game = await database.getGameByRoomCode(roomCode);
+    // Atomically add user to readyPlayerIds
+    const updated = await database.atomicAddToGameSet(roomCode, "role_reveal", "readyPlayerIds", user.id);
 
-    if (!game) {
-      res.status(404).json({ ok: false, message: "Game not found." });
-      return;
-    }
-
-    if (game.phase !== "role_reveal") {
-      res.status(400).json({ ok: false, message: "Game is not in the role reveal phase." });
-      return;
-    }
-
-    const readyIds = Array.isArray(game.readyPlayerIds) ? game.readyPlayerIds : [];
-
-    if (readyIds.includes(user.id)) {
+    if (!updated) {
+      // Either game doesn't exist, wrong phase, or already ready
+      const game = await database.getGameByRoomCode(roomCode);
+      if (!game) {
+        res.status(404).json({ ok: false, message: "Game not found." });
+        return;
+      }
+      // Already ready — return current state
       res.status(200).json({ ok: true, gameState: buildClientState(game) });
       return;
     }
 
-    const nextReadyIds = [...readyIds, user.id];
-    let next = { ...game, readyPlayerIds: nextReadyIds };
+    let next = updated;
 
-    if (nextReadyIds.length >= PLAYERS_REQUIRED) {
+    if ((next.readyPlayerIds || []).length >= PLAYERS_REQUIRED) {
       next = {
         ...next,
         phase: "pick_building",
         phaseDeadline: Date.now() + PHASE_TIMERS_MS.pick_building,
       };
+      await database.updateGameByRoomCode(roomCode, next);
       schedulePhaseTimeout(roomCode, "pick_building", PHASE_TIMERS_MS.pick_building);
     }
 
-    await database.updateGameByRoomCode(roomCode, next);
     io.to(roomCode).emit("game:state", buildClientState(next));
 
     res.status(200).json({ ok: true, gameState: buildClientState(next) });
@@ -1542,40 +1585,41 @@ app.post("/api/games/:roomCode/vote", requireAuth, async (req, res) => {
   }
 
   try {
-    const game = await database.getGameByRoomCode(roomCode);
+    // Atomically set this player's vote only if they haven't voted yet
+    const updated = await database.atomicSetGameField(roomCode, "vote", "votes", user.id, choice);
 
-    if (!game) {
-      res.status(404).json({ ok: false, message: "Game not found." });
+    if (!updated) {
+      const game = await database.getGameByRoomCode(roomCode);
+      if (!game) {
+        res.status(404).json({ ok: false, message: "Game not found." });
+        return;
+      }
+      if (game.phase !== "vote") {
+        res.status(400).json({ ok: false, message: "Game is not in the voting phase." });
+        return;
+      }
+      if (game.votes && game.votes[user.id]) {
+        res.status(400).json({ ok: false, message: "You have already voted." });
+        return;
+      }
+      const inGame = game.players.some((p) => p.userId === user.id);
+      if (!inGame) {
+        res.status(403).json({ ok: false, message: "You are not in this game." });
+        return;
+      }
+      res.status(400).json({ ok: false, message: "Could not submit vote." });
       return;
     }
 
-    if (game.phase !== "vote") {
-      res.status(400).json({ ok: false, message: "Game is not in the voting phase." });
-      return;
-    }
-
-    const inGame = game.players.some((p) => p.userId === user.id);
-    if (!inGame) {
-      res.status(403).json({ ok: false, message: "You are not in this game." });
-      return;
-    }
-
-    if (game.votes && game.votes[user.id]) {
-      res.status(400).json({ ok: false, message: "You have already voted." });
-      return;
-    }
-
-    const nextVotes = { ...(game.votes || {}), [user.id]: choice };
-    let next = { ...game, votes: nextVotes };
+    let next = updated;
 
     // If all players have voted, resolve
-    if (Object.keys(nextVotes).length >= game.players.length) {
+    if (Object.keys(next.votes || {}).length >= next.players.length) {
       next = resolveVotes(next);
       await database.updateGameByRoomCode(roomCode, next);
       io.to(roomCode).emit("game:state", buildClientState(next));
       setTimeout(() => advanceFromVoteResult(roomCode), RESULT_DISPLAY_MS);
     } else {
-      await database.updateGameByRoomCode(roomCode, next);
       io.to(roomCode).emit("game:state", buildClientState(next));
     }
 
@@ -1598,39 +1642,43 @@ app.post("/api/games/:roomCode/submit-card", requireAuth, async (req, res) => {
   }
 
   try {
-    const game = await database.getGameByRoomCode(roomCode);
+    // Pre-validate: need to check role enforcement before atomic write
+    const preGame = await database.getGameByRoomCode(roomCode);
 
-    if (!game) {
+    if (!preGame) {
       res.status(404).json({ ok: false, message: "Game not found." });
       return;
     }
 
-    if (game.phase !== "submit_heist") {
+    if (preGame.phase !== "submit_heist") {
       res.status(400).json({ ok: false, message: "Game is not in the heist phase." });
       return;
     }
 
-    if (!(game.proposedTeam || []).includes(user.id)) {
+    if (!(preGame.proposedTeam || []).includes(user.id)) {
       res.status(403).json({ ok: false, message: "You are not on the heist team." });
       return;
     }
 
-    if (game.heistCards && game.heistCards[user.id]) {
-      res.status(400).json({ ok: false, message: "You have already submitted your card." });
-      return;
-    }
-
     // Role enforcement: only the Quisling can submit sabotage
-    if (card === "sabotage" && game.quislingId !== user.id) {
+    if (card === "sabotage" && preGame.quislingId !== user.id) {
       res.status(403).json({ ok: false, message: "Only the Quisling can submit sabotage." });
       return;
     }
 
-    const nextCards = { ...(game.heistCards || {}), [user.id]: card };
-    let next = { ...game, heistCards: nextCards };
+    // Atomically set this player's heist card
+    const updated = await database.atomicSetGameField(roomCode, "submit_heist", "heistCards", user.id, card);
+
+    if (!updated) {
+      res.status(400).json({ ok: false, message: "You have already submitted your card." });
+      return;
+    }
+
+    let next = updated;
 
     // If all team members have submitted, resolve the heist
-    if (Object.keys(nextCards).length >= (game.proposedTeam || []).length) {
+    const nextCards = next.heistCards || {};
+    if (Object.keys(nextCards).length >= (next.proposedTeam || []).length) {
       const cleanCount = Object.values(nextCards).filter((c) => c === "clean").length;
       const sabotageCount = Object.values(nextCards).filter((c) => c === "sabotage").length;
       const outcome = sabotageCount > 0 ? "alarm" : "success";
@@ -1639,13 +1687,13 @@ app.post("/api/games/:roomCode/submit-card", requireAuth, async (req, res) => {
         ...next,
         alarm: outcome === "alarm" ? next.alarm + 1 : next.alarm,
         successes: outcome === "success" ? next.successes + 1 : next.successes,
-        spentBuildingIds: game.selectedBuildingId
-          ? [...(next.spentBuildingIds || []), game.selectedBuildingId]
+        spentBuildingIds: next.selectedBuildingId
+          ? [...(next.spentBuildingIds || []), next.selectedBuildingId]
           : next.spentBuildingIds || [],
         operationHistory: [...(next.operationHistory || []), buildOperationRecord(next, outcome, cleanCount, sabotageCount)],
         heistReveal: { cleanCount, sabotageCount, outcome },
         phase: "heist_result",
-        phaseDeadline: null,
+        phaseDeadline: Date.now() + RESULT_DISPLAY_MS,
         pendingNextPhase: "next_operation",
       };
 
@@ -1653,7 +1701,6 @@ app.post("/api/games/:roomCode/submit-card", requireAuth, async (req, res) => {
       io.to(roomCode).emit("game:state", buildClientState(next));
       setTimeout(() => advanceFromHeistResult(roomCode), RESULT_DISPLAY_MS);
     } else {
-      await database.updateGameByRoomCode(roomCode, next);
       io.to(roomCode).emit("game:state", buildClientState(next));
     }
 
@@ -1671,44 +1718,47 @@ app.post("/api/games/:roomCode/accuse", requireAuth, async (req, res) => {
   const targetUserId = String(req.body?.targetUserId || "").trim();
 
   try {
-    const game = await database.getGameByRoomCode(roomCode);
+    // Pre-validate target is in game
+    const preGame = await database.getGameByRoomCode(roomCode);
 
-    if (!game) {
+    if (!preGame) {
       res.status(404).json({ ok: false, message: "Game not found." });
       return;
     }
 
-    if (game.phase !== "final_accusation") {
+    if (preGame.phase !== "final_accusation") {
       res.status(400).json({ ok: false, message: "Game is not in the final accusation phase." });
       return;
     }
 
-    const inGame = game.players.some((p) => p.userId === user.id);
+    const inGame = preGame.players.some((p) => p.userId === user.id);
     if (!inGame) {
       res.status(403).json({ ok: false, message: "You are not in this game." });
       return;
     }
 
-    const targetInGame = game.players.some((p) => p.userId === targetUserId);
+    const targetInGame = preGame.players.some((p) => p.userId === targetUserId);
     if (!targetInGame) {
       res.status(400).json({ ok: false, message: "Accusation target is not in the game." });
       return;
     }
 
-    if (game.accusationVotes && game.accusationVotes[user.id]) {
+    // Atomically set this player's accusation vote
+    const updated = await database.atomicSetGameField(roomCode, "final_accusation", "accusationVotes", user.id, targetUserId);
+
+    if (!updated) {
       res.status(400).json({ ok: false, message: "You have already submitted your accusation." });
       return;
     }
 
-    const nextVotes = { ...(game.accusationVotes || {}), [user.id]: targetUserId };
-    let next = { ...game, accusationVotes: nextVotes };
+    let next = updated;
 
     // If all players have accused, tally
-    if (Object.keys(nextVotes).length >= game.players.length) {
+    if (Object.keys(next.accusationVotes || {}).length >= next.players.length) {
       next = applyAccusationTally(next);
+      await database.updateGameByRoomCode(roomCode, next);
     }
 
-    await database.updateGameByRoomCode(roomCode, next);
     io.to(roomCode).emit("game:state", buildClientState(next));
 
     res.status(200).json({ ok: true, gameState: buildClientState(next) });
