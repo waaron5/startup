@@ -269,20 +269,8 @@ export default function HomePage() {
         {errorMessage ? <p className="text-danger text-center">{errorMessage}</p> : null}
       </div>
 
-      <form className="flex flex-col mt-8 items-center gap-2" onSubmit={handleJoinRoom}>
-        <label className="text-lg text-text flex flex-col items-start gap-2 w-80">
-          NAME
-          <input
-            className="input-field w-full"
-            name="displayName"
-            onChange={(event) => setDisplayNameInput(event.target.value)}
-            placeholder="NAME"
-            type="text"
-            value={displayNameInput}
-          />
-        </label>
-
-        <label className="text-lg text-text flex flex-col items-start gap-2 w-80">
+      <form className="flex flex-col mt-8 items-center gap-2 px-4 w-full" onSubmit={handleJoinRoom}>
+        <label className="text-lg text-text flex flex-col items-start gap-2 w-full max-w-sm">
           ROOM CODE
           <input
             className="input-field w-full"
@@ -294,12 +282,24 @@ export default function HomePage() {
           />
         </label>
 
-        <button className="btn-primary w-80 py-3 text-lg mt-4 border-white/20" type="submit">
+        <label className="text-lg text-text flex flex-col items-start gap-2 w-full max-w-sm">
+          NAME
+          <input
+            className="input-field w-full"
+            name="displayName"
+            onChange={(event) => setDisplayNameInput(event.target.value)}
+            placeholder="NAME"
+            type="text"
+            value={displayNameInput}
+          />
+        </label>
+
+        <button className="btn-primary w-full max-w-sm py-3 text-lg mt-4 border-white/20" type="submit">
           JOIN ROOM
         </button>
 
         <button
-          className="btn-ghost w-80 py-3 text-lg border border-white/20"
+          className="btn-ghost w-full max-w-sm py-3 text-lg border border-white/20"
           onClick={handleCreateRoom}
           type="button"
         >

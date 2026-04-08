@@ -43,15 +43,23 @@ export default function PhaseTimer({ deadline, paused = false }: PhaseTimerProps
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const formatted = `${minutes}:${String(seconds).padStart(2, "0")}`;
-  const isUrgent = display <= 60;
+  const isCritical = display <= 10;
+  const isUrgent = display <= 30;
+  const isWarning = display <= 60;
+
+  const colorClass = paused
+    ? "text-primary animate-pulse"
+    : isCritical
+    ? "text-danger animate-pulse"
+    : isUrgent
+    ? "text-danger"
+    : isWarning
+    ? "text-yellow-400"
+    : "text-text-muted";
 
   return (
     <div className="shrink-0 flex items-center justify-center py-1">
-      <span
-        className={`text-lg font-bold tabular-nums ${
-          paused ? "text-primary animate-pulse" : isUrgent ? "text-danger" : "text-text-muted"
-        }`}
-      >
+      <span className={`text-lg font-bold tabular-nums ${colorClass}`}>
         {paused ? `⏸ ${formatted}` : formatted}
       </span>
     </div>

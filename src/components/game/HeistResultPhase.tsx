@@ -13,6 +13,7 @@ export default function HeistResultPhase({ state }: HeistResultPhaseProps) {
     ? state.operationHistory[state.operationHistory.length - 1]
     : null;
   const buildingLabel = lastOperation?.buildingLabel ?? state.selectedBuildingId ?? "Building";
+  const operationNumber = lastOperation?.operationNumber ?? state.operationNumber;
 
   return (
     <div className="flex flex-col items-center justify-center gap-6 px-4 py-12 max-w-sm mx-auto w-full h-full">
@@ -21,6 +22,9 @@ export default function HeistResultPhase({ state }: HeistResultPhaseProps) {
           success ? "border-success bg-success/5" : "border-danger bg-danger/5"
         }`}
       >
+        <p className="text-text-muted text-xs uppercase tracking-widest mb-3">
+          Operation {operationNumber} — {buildingLabel}
+        </p>
         <p
           className={`text-4xl font-bold font-metal tracking-wide ${
             success ? "text-success" : "text-danger"
@@ -28,7 +32,6 @@ export default function HeistResultPhase({ state }: HeistResultPhaseProps) {
         >
           {success ? "SUCCESS" : "SABOTAGED"}
         </p>
-        <p className="text-text-muted text-sm mt-3">{buildingLabel}</p>
       </div>
 
       <div className="flex gap-8">

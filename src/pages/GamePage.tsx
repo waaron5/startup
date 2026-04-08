@@ -22,7 +22,8 @@ export default function GamePage() {
   const navigate = useNavigate();
   const { roomCode: roomCodeParam } = useParams<{ roomCode: string }>();
   const { ensurePlayableSession, user } = useAuth();
-  const { gameState, myRole, setRoomCode } = useGame();
+  const { gameState, myRole, isConnected, setRoomCode } = useGame();
+  const [connectError, setConnectError] = useState(false);
 
   // Register the roomCode from URL into game context on mount
   useEffect(() => {
@@ -37,6 +38,8 @@ export default function GamePage() {
 
       if (playableUser && isActive) {
         setRoomCode(roomCodeParam);
+      } else if (!playableUser && isActive) {
+        setConnectError(true);
       }
     }
 
@@ -92,6 +95,26 @@ export default function GamePage() {
   }
 
   if (!gameState) {
+    if (connectError) {
+      return (
+        <div className="bg-bg text-text min-h-screen flex items-center justify-center p-6">
+          <div className="card text-center w-full max-w-sm flex flex-col gap-4">
+            <p className="text-danger font-medium">Could not connect to the game.</p>
+            <p className="text-text-muted text-sm">Room: {roomCodeParam}</p>
+            <button
+              className="btn-primary w-full"
+              onClick={() => { setConnectError(false); window.location.reload(); }}
+              type="button"
+            >
+              Retry
+            </button>
+            <button className="btn-ghost w-full text-sm" onClick={() => navigate("/")} type="button">
+              Return to Lobby
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="bg-bg text-text min-h-screen flex items-center justify-center p-6">
         <div className="card text-center w-full max-w-sm">
@@ -105,6 +128,11 @@ export default function GamePage() {
   return (
     <div className={`text-text h-[100dvh] flex flex-col overflow-hidden transition-colors duration-500 ${gameState.phase === "final_accusation" ? "bg-[#0a0f18]" : "bg-bg"}`}>
       {splash && <PhaseSplash phase={splash} onDone={() => setSplash(null)} />}
+      {!isConnected && gameState.phase !== "game_over" && (
+        <div className="bg-danger/90 text-white text-xs text-center py-1.5 px-4 font-medium tracking-wide animate-pulse shrink-0">
+          Reconnecting...
+        </div>
+      )}
       <nav className="flex items-center justify-between px-4 py-2 bg-panel border-b border-white/10 shrink-0">
         <div className="flex flex-col leading-tight">
           <span className="text-text font-semibold text-sm">{user?.displayName}</span>

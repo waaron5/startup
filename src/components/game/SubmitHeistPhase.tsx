@@ -3,6 +3,7 @@ import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { isOnTeam, hasSubmittedCard } from "../../lib/gameEngine";
 import { BUILDINGS_BY_ID } from "../../constants/buildings";
+import PhaseTimer from "./PhaseTimer";
 
 type SubmitHeistPhaseProps = {
   state: ClientGameState;
@@ -47,6 +48,8 @@ export default function SubmitHeistPhase({ state, myUserId, myRole }: SubmitHeis
         <p className="text-text-muted text-xs mt-2">{submittedCount}/{teamSize} cards played</p>
       </div>
 
+      <PhaseTimer deadline={state.phaseDeadline} />
+
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
       {onTeam ? (
@@ -74,7 +77,7 @@ export default function SubmitHeistPhase({ state, myUserId, myRole }: SubmitHeis
               onClick={() => handleCard("clean")}
               type="button"
             >
-              CLEAN
+              {pending ? "Sending..." : "CLEAN"}
             </button>
             {myRole === "quisling" && (
               <button
@@ -83,7 +86,7 @@ export default function SubmitHeistPhase({ state, myUserId, myRole }: SubmitHeis
                 onClick={() => handleCard("sabotage")}
                 type="button"
               >
-                SABOTAGE
+                {pending ? "Sending..." : "SABOTAGE"}
               </button>
             )}
           </div>

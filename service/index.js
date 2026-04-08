@@ -10,8 +10,11 @@ const database = require("./database");
 
 const app = express();
 const httpServer = http.createServer(app);
+const allowedOrigin = process.env.NODE_ENV === "production"
+  ? "https://thequisling.online"
+  : true;
 const io = new Server(httpServer, {
-  cors: { origin: true, credentials: true },
+  cors: { origin: allowedOrigin, credentials: true },
 });
 const port = Number(process.env.PORT) || 4000;
 const staticDir = path.join(__dirname, "..", "dist");
@@ -245,6 +248,7 @@ const RESULT_DISPLAY_MS = 3000;
 const GAME_TIMER_MS = 20 * 60 * 1000; // 20 minutes — full game timer shown to players
 const PHASE_TIMERS_MS = {
   // Internal auto-advance guards only — never displayed to players
+  role_reveal: 90000,
   pick_building: 120000,
   propose_team: 180000,
   vote: 90000,
@@ -546,6 +550,20 @@ async function applyLazyTimeout(game) {
   const now = Date.now();
 
   switch (game.phase) {
+    case "role_reveal": {
+      // Auto-ready all unresponsive players and advance
+      const allPlayerIds = game.players.map((p) => p.userId);
+      const gameDeadline = Date.now() + GAME_TIMER_MS;
+      const next = {
+        ...game,
+        readyPlayerIds: allPlayerIds,
+        phase: "pick_building",
+        phaseDeadline: Date.now() + PHASE_TIMERS_MS.pick_building,
+        gameDeadline,
+      };
+      return next;
+    }
+
     case "pick_building": {
       let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
       if (next.rejectedPlans >= MAX_REJECTED_PLANS) {
@@ -651,6 +669,24 @@ function schedulePhaseTimeout(roomCode, phase, delayMs) {
 
 async function handleServerPhaseTimeout(game, roomCode) {
   const now = Date.now();
+
+  if (game.phase === "role_reveal") {
+    // Auto-ready all players who haven't clicked ready and advance
+    const allPlayerIds = game.players.map((p) => p.userId);
+    const gameDeadline = Date.now() + GAME_TIMER_MS;
+    const next = {
+      ...game,
+      readyPlayerIds: allPlayerIds,
+      phase: "pick_building",
+      phaseDeadline: now + PHASE_TIMERS_MS.pick_building,
+      gameDeadline,
+    };
+    await database.updateGameByRoomCode(roomCode, next);
+    io.to(roomCode).emit("game:state", buildClientState(next));
+    schedulePhaseTimeout(roomCode, "pick_building", PHASE_TIMERS_MS.pick_building);
+    scheduleGameTimeout(roomCode, GAME_TIMER_MS);
+    return;
+  }
 
   if (game.phase === "pick_building") {
     let next = { ...game, rejectedPlans: game.rejectedPlans + 1 };
@@ -777,7 +813,7 @@ async function advanceFromHeistResult(roomCode) {
 function scheduleNextPhaseTimeout(game, roomCode) {
   if (!game.phaseDeadline) return;
   const delay = Math.max(0, game.phaseDeadline - Date.now());
-  if (["pick_building", "propose_team", "vote", "submit_heist", "final_accusation"].includes(game.phase)) {
+  if (["role_reveal", "pick_building", "propose_team", "vote", "submit_heist", "final_accusation"].includes(game.phase)) {
     schedulePhaseTimeout(roomCode, game.phase, delay);
   }
 }
@@ -827,12 +863,14 @@ async function applyDevBotHeistCards(roomCode, game) {
       continue;
     }
 
+    const card = next.quislingId === botUserId ? "sabotage" : "clean";
+
     const updated = await database.atomicSetGameField(
       roomCode,
       "submit_heist",
       "heistCards",
       botUserId,
-      "clean"
+      card
     );
 
     if (updated) {
@@ -1674,7 +1712,7 @@ app.post("/api/games", requireAuth, async (req, res) => {
       rejectedPlans: 0,
       spentBuildingIds: [],
       selectedBuildingId: null,
-      phaseDeadline: null,
+      phaseDeadline: Date.now() + PHASE_TIMERS_MS.role_reveal,
       operationHistory: [],
       readyPlayerIds: devBotIds,
       voteReveal: null,
@@ -1693,6 +1731,9 @@ app.post("/api/games", requireAuth, async (req, res) => {
     }
 
     await database.setLobbyStatusByRoomCode(roomCode, "in_progress", nowIso());
+
+    // Schedule role_reveal auto-advance in case some players never click ready
+    schedulePhaseTimeout(roomCode, "role_reveal", PHASE_TIMERS_MS.role_reveal);
 
     // Broadcast public state to room
     io.to(roomCode).emit("game:state", buildClientState(gameDoc));

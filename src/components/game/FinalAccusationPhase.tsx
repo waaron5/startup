@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { hasAccused } from "../../lib/gameEngine";
+import PhaseTimer from "./PhaseTimer";
 
 type FinalAccusationPhaseProps = {
   state: ClientGameState;
@@ -12,19 +13,22 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
   const { submitAccusation } = useGame();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const alreadyAccused = hasAccused(state, myUserId);
   const suspects = state.players.filter((p) => p.userId !== myUserId);
+  const confirmingName = state.players.find((p) => p.userId === confirming)?.displayName ?? "";
 
-  async function handleAccuse(suspectId: string) {
-    if (pending || alreadyAccused) return;
+  async function handleConfirm() {
+    if (!confirming || pending || alreadyAccused) return;
     setError("");
     setPending(true);
     try {
-      await submitAccusation(suspectId);
+      await submitAccusation(confirming);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to submit accusation.");
       setPending(false);
+      setConfirming(null);
     }
   }
 
@@ -36,6 +40,8 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
           WHO IS THE QUISLING?
         </h2>
       </div>
+
+      <PhaseTimer deadline={state.phaseDeadline} />
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 
@@ -58,6 +64,30 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
             })}
           </div>
         </div>
+      ) : confirming ? (
+        <div className="flex flex-col gap-4 w-full">
+          <div className="rounded-xl border border-danger/40 bg-danger/8 px-4 py-5 text-center">
+            <p className="text-text-muted text-sm mb-2">You are about to accuse:</p>
+            <p className="text-danger font-bold text-2xl">{confirmingName}</p>
+            <p className="text-text-muted text-xs mt-2">This cannot be undone.</p>
+          </div>
+          <button
+            className="btn-danger w-full py-4 text-lg font-bold"
+            disabled={pending}
+            onClick={handleConfirm}
+            type="button"
+          >
+            {pending ? "Sending..." : `Accuse ${confirmingName}`}
+          </button>
+          <button
+            className="btn-ghost w-full py-3 text-sm"
+            disabled={pending}
+            onClick={() => setConfirming(null)}
+            type="button"
+          >
+            ← Go back
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col gap-2 w-full">
           {suspects.map((p) => (
@@ -65,7 +95,7 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
               className="w-full rounded-xl border border-danger/30 bg-danger/5 px-4 py-4 text-left transition-all hover:border-danger hover:bg-danger/10 active:scale-[0.98]"
               disabled={pending}
               key={p.userId}
-              onClick={() => handleAccuse(p.userId)}
+              onClick={() => setConfirming(p.userId)}
               type="button"
             >
               <span className="font-medium text-text text-lg">{p.displayName}</span>

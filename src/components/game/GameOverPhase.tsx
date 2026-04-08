@@ -70,23 +70,22 @@ export default function GameOverPhase({ state, myUserId, onPlayAgain }: GameOver
       {/* Accusation breakdown */}
       {Object.keys(accusations).length > 0 && (
         <div className="card">
-          <p className="text-xs text-text-muted uppercase tracking-wide mb-2">Accusations</p>
-          <div className="flex flex-col gap-1">
+          <p className="text-xs text-text-muted uppercase tracking-wide mb-3">Final Accusations</p>
+          <div className="flex flex-col divide-y divide-white/5">
             {state.players.map((accuser) => {
               const targetId = accusations[accuser.userId];
               const targetName =
                 state.players.find((p) => p.userId === targetId)?.displayName ?? "—";
+              const accusedQuisling = targetId === result.quislingId;
               return (
                 <div
-                  className="flex items-center justify-between text-sm py-1"
+                  className="flex items-center justify-between text-sm py-2"
                   key={accuser.userId}
                 >
-                  <span className="text-text">{accuser.displayName}</span>
-                  <span className="text-text-muted">accused</span>
+                  <span className="text-text font-medium">{accuser.displayName}</span>
+                  <span className="text-text-muted text-xs">accused</span>
                   <span
-                    className={`font-medium ${
-                      targetId === result.quislingId ? "text-danger" : "text-text"
-                    }`}
+                    className={`font-medium ${accusedQuisling ? "text-success" : "text-danger"}`}
                   >
                     {targetName}
                   </span>
@@ -100,19 +99,22 @@ export default function GameOverPhase({ state, myUserId, onPlayAgain }: GameOver
       {/* Operation history */}
       {result.operationHistory.length > 0 && (
         <div className="card">
-          <p className="text-xs text-text-muted uppercase tracking-wide mb-2">Operation History</p>
-          <div className="flex flex-col gap-2">
-            {result.operationHistory.map((op) => (
-              <div className="flex items-center justify-between text-sm" key={op.operationNumber}>
-                <span className="text-text-muted">#{op.operationNumber}</span>
-                <span className="text-text">{op.buildingLabel}</span>
+          <p className="text-xs text-text-muted uppercase tracking-wide mb-3">Operation Log</p>
+          <div className="flex flex-col divide-y divide-white/5">
+            {result.operationHistory.map((op, i) => (
+              <div
+                className={`flex items-center justify-between text-sm py-2 ${i % 2 === 0 ? "bg-white/[0.02] -mx-2 px-2 rounded" : ""}`}
+                key={op.operationNumber}
+              >
+                <span className="text-text-muted text-xs w-6">#{op.operationNumber}</span>
+                <span className="text-text flex-1 px-3">{op.buildingLabel}</span>
                 <span
-                  className={`font-medium text-xs uppercase tracking-wide ${
+                  className={`font-medium text-xs uppercase tracking-wide px-2 py-0.5 rounded-full border ${
                     op.outcome === "success"
-                      ? "text-success"
+                      ? "text-success border-success/30 bg-success/5"
                       : op.outcome === "escalated"
-                      ? "text-text-muted"
-                      : "text-danger"
+                      ? "text-text-muted border-white/10"
+                      : "text-danger border-danger/30 bg-danger/5"
                   }`}
                 >
                   {op.outcome}

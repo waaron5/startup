@@ -376,19 +376,6 @@ export default function ProfilePage() {
       </section>
 
       <section className="card w-full max-w-xl text-center">
-        <h2 className="text-2xl mb-2">Friends</h2>
-        {user?.friends.length ? (
-          <ul className="text-text-muted">
-            {user.friends.map((friend) => (
-              <li key={friend}>{friend}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-text-muted">No friends added yet.</p>
-        )}
-      </section>
-
-      <section className="card w-full max-w-xl text-center">
         <h2 className="text-2xl mb-2">Recent Matches</h2>
         {recentResults.length ? (
           <ul className="text-text-muted space-y-2">

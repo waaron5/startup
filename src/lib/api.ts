@@ -78,6 +78,9 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
     headers.set("Content-Type", "application/json");
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
   let response: Response;
 
   try {
@@ -85,9 +88,15 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
       ...init,
       headers,
       credentials: "include",
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiRequestError(0, "Request timed out. Please try again.", null);
+    }
     throw new ApiRequestError(0, "Unable to reach the service.", null);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const rawBody = await response.text();

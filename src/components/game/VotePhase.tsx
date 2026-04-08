@@ -76,7 +76,7 @@ export default function VotePhase({ state, myUserId }: VotePhaseProps) {
             onClick={() => handleVote("approve")}
             type="button"
           >
-            APPROVE
+            {pending ? "Sending..." : "APPROVE"}
           </button>
           <button
             className="btn-danger w-full py-5 text-xl font-bold"
@@ -84,7 +84,7 @@ export default function VotePhase({ state, myUserId }: VotePhaseProps) {
             onClick={() => handleVote("reject")}
             type="button"
           >
-            REJECT
+            {pending ? "Sending..." : "REJECT"}
           </button>
         </div>
       )}
