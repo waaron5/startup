@@ -195,9 +195,9 @@ For this deliverable I associate the votes with the logged in user. I stored the
 
 ## WebSocket deliverable
 
-For this deliverable I used webSocket to update the votes on the frontend in realtime.
+For this deliverable I implemented full real-time multiplayer using Socket.IO WebSockets. All game state is driven by server-side events broadcast to every player in the room simultaneously.
 
-- [x] **Backend listens for WebSocket connection** - done!
-- [x] **Frontend makes WebSocket connection** - done!
-- [x] **Data sent over WebSocket connection** - done!
-- [x] **WebSocket data displayed** - All user votes display in realtime. I'm really proud that this is working. Way cool! 🎉 I'm going to celebrate with my bestie over waffles!
+- [x] **Backend listens for WebSocket connection** - `service/index.js` initializes Socket.IO on the HTTP server. Clients join a room-scoped Socket.IO room on connect via `socket.join(roomCode)`.
+- [x] **Frontend makes WebSocket connection** - `GameContext.tsx` connects via `io({ path: "/socket.io", transports: ["websocket", "polling"] })` and registers all event handlers on mount.
+- [x] **Data sent over WebSocket connection** - The server emits `game_state_update` to the entire room on every phase transition, vote, heist submission, and accusation. Payloads include the full sanitized game state (phase, team proposals, vote results, heist outcomes, accusation tallies).
+- [x] **WebSocket data displayed** - Every phase of the game — team proposals, approve/reject votes, heist cards, results, and the final accusation — updates in real time across all connected clients without any polling. The reconnection banner in `GamePage.tsx` surfaces connection drops to the user.
