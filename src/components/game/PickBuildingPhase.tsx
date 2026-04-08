@@ -33,23 +33,23 @@ export default function PickBuildingPhase({ state, myUserId }: PickBuildingPhase
   }
 
   return (
-    <div className="flex flex-col h-full px-1 py-1 w-full">
-      {error && <p className="text-danger text-sm text-center">{error}</p>}
-
-      {!amLeader && (
-        <p className="text-center text-text-muted text-sm py-1">
-          <span className="text-text font-medium">{leaderName}</span> is picking the target
-        </p>
-      )}
-
+    <div className="relative h-full w-full">
       <GameBoard
         clickableBuildingIds={availableBuildings.map((building) => building.id)}
-        className="flex-1 min-h-0"
+        className="absolute inset-0"
         disabled={!amLeader || pending !== null}
         onSelect={handleSelect}
         selectedBuildingId={pending}
         spentBuildingIds={state.spentBuildingIds}
       />
+      {!amLeader && (
+        <p className="absolute top-2 left-0 right-0 z-10 text-center text-text-muted text-sm">
+          <span className="text-text font-medium">{leaderName}</span> is picking the target
+        </p>
+      )}
+      {error && (
+        <p className="absolute bottom-2 left-0 right-0 z-10 text-danger text-sm text-center px-4">{error}</p>
+      )}
     </div>
   );
 }

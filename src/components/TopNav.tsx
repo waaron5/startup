@@ -3,7 +3,6 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 
 const defaultNavItems = [
   { to: "/", label: "home" },
-  { to: "/game", label: "game" },
   { to: "/profile", label: "profile" },
   { to: "/results", label: "results" },
   { to: "/credits", label: "credits" },

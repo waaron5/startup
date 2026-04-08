@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { ClientGameState } from "../../types/domain";
 import { useGame } from "../../context/GameContext";
 import { hasAccused } from "../../lib/gameEngine";
-import PhaseTimer from "./PhaseTimer";
 
 type FinalAccusationPhaseProps = {
   state: ClientGameState;
@@ -40,8 +39,6 @@ export default function FinalAccusationPhase({ state, myUserId }: FinalAccusatio
           WHO IS THE QUISLING?
         </h2>
       </div>
-
-      <PhaseTimer deadline={state.phaseDeadline} />
 
       {error && <p className="text-danger text-sm text-center">{error}</p>}
 

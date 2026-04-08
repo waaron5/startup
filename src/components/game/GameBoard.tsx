@@ -139,8 +139,8 @@ export default function GameBoard({
     <div className={`overflow-hidden ${className}`.trim()}>
       <svg
         aria-label="The Quisling game board"
-        className="h-full w-full"
-        preserveAspectRatio="xMidYMid meet"
+        className="h-full w-full block"
+        preserveAspectRatio="xMidYMin meet"
         viewBox={BOARD_VIEW_BOX}
       >
         <defs>

@@ -196,7 +196,7 @@ export default function GamePage() {
         <GameTracker state={gameState} />
       )}
 
-      <PhaseTimer deadline={gameState.gameDeadline} paused={timerPaused} />
+      <PhaseTimer deadline={gameState.phaseDeadline ?? gameState.gameDeadline} paused={timerPaused} />
 
       <main className="flex-1 overflow-hidden">
         {gameState.phase === "role_reveal" && (

@@ -85,19 +85,27 @@ export function GameProvider({ children }: PropsWithChildren) {
     };
   }, [roomCode]);
 
-  // Reload role when game transitions out of role_reveal into pick_building
+  // Reload role when game phase changes and myRole is still missing
   useEffect(() => {
     if (!roomCode || !gameState) return;
-    if (gameState.phase === "pick_building" && !myRole) {
+    if ((gameState.phase === "role_reveal" || gameState.phase === "pick_building") && !myRole) {
       fetchMyRole(roomCode)
         .then((res) => setMyRole(res.role))
         .catch(() => {});
     }
-    // If game is over, we can infer role from result
-    if (gameState.phase === "game_over" && gameState.result && !myRole) {
-      // Leave myRole as null; components will derive from result.quislingId
-    }
   }, [gameState?.phase, myRole, roomCode]);
+
+  // Poll for role every 2s during role_reveal if it hasn't loaded yet
+  useEffect(() => {
+    if (myRole || !roomCode || gameState?.phase !== "role_reveal") return;
+    let active = true;
+    const interval = setInterval(() => {
+      fetchMyRole(roomCode)
+        .then((res) => { if (active) setMyRole(res.role); })
+        .catch(() => {});
+    }, 2000);
+    return () => { active = false; clearInterval(interval); };
+  }, [myRole, roomCode, gameState?.phase]);
 
   // Socket.IO connection — maintained while roomCode is set
   useEffect(() => {
